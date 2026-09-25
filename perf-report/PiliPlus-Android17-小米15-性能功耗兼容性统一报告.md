@@ -16,6 +16,7 @@
 | 分析方式 | 纯静态代码走查 + Android 官方行为变更逐条对照；**未运行 App、未修改文件、未做性能采样** |
 | 代码快照 | 2026-09-25（`lib/`、`android/`、`pubspec.yaml`） |
 | 可回溯性 | 所有结论均标注 `文件:行号`，可在实施前后用 `flutter run --profile` + DevTools 复核 |
+| 方案编制 | **2026-09-26：新增第 12 章「增量优化实施方案」**——把第 1–11 章的 ⏳ 待办改写成可执行任务卡（落点 / 步骤 / 验证命令 / 验收线 / 回滚），并补 9 项新增编号（A17-13、MI-17、PL-11、PL-12、D-06、U-18、N-05、S-11、BD-06） |
 
 ### 0.1 标记说明
 
@@ -85,6 +86,8 @@ Android 17 + 澎湃 OS 4 对本 App 的影响可归为**三条主线**：
 | 13 | 评论正则/`TextSpan` 结果缓存（U-02 / PF-02 #3） | 评论滚动 CPU 明显下降 | ★★ | ⏳ |
 | 14 | HDR10 / 杜比视界输出与 tone-mapping（PL-03） | 小米 15 屏幕上画质与亮度明显提升 | ★★ | ⏳ |
 | 15 | AV1 硬解与解码器白名单（PL-04） | 同画质更省电，失败可自愈 | ★★ | ✅（部分） |
+
+> **本表是「结论层」的优先级**。要继续推进到这里列出的 ⏳ 项，请直接按 **第 12 章（第十部分）增量优化实施方案** 的批次顺序执行——那里有每张卡的落点文件、改造步骤、验证命令、验收线与回滚方式，批次顺序（A 快赢 → B 耗电主线 → C 卡顿 → D 启动 → E 网络 → F 后台/更新 → G 画质 A/B → H 发布）已按「收益 ÷ 风险」排过序。
 
 ### 1.2 最需要警惕的「组合拳」
 
@@ -819,11 +822,28 @@ Android 在 Doze / App Standby 下对后台进程的限制比其它平台严格�
 
 | 项 | 内容 | 状态 |
 | --- | --- | --- |
-| S-01 ~ S-04 | 启动流程重排：`setupServiceLocator` 去 await、`MediaKit` 延迟、动态取色 post-frame、Hive box 懒开 | ⏳ |
+| S-01 ~ S-04 | 启动流程重排：`setupServiceLocator` 去 await、`MediaKit` 延迟、动态取色并行、Hive box 冷热分离并发 | ✅（2026-09-26） |
 | N-01 / N-02 / B-04 | `responseDecoder` 异步化 + gRPC `isolate: true` + 连接池 `idleTimeout` 调优 | ⏳ |
 | B-09 全表 | 定时器统一治理（「应用不可见即暂停」） | ⏳ |
 | S-06 / S-07 | `GetX` 生命周期治理：`binding` + `Get.delete` | ⏳ |
 | U-02 / U-03 / U-04 / U-05 / U-17 | 评论正则缓存、局部更新、`Obx` 拆分、`ThemeData` memo 化 | ⏳ |
+
+---
+
+### 9.1 批次六及以后：见第 12 章（2026-09-26 编制）
+
+批次一~五（上表）覆盖「功能可用性 + 耗电发热 + 画质 + 澎湃兼容 + 启动网络」，其**剩余 ⏳ 项**在第 12 章里被拆成 8 个可执行批次。对应关系如下，执行时**不要重复立项**：
+
+| 第 12 章批次 | 覆盖本报告编号 | 主题 |
+| --- | --- | --- |
+| 批次 A（1 天） | A17-04 / A17-05 / A17-07 / A17-08 / A17-10 / A17-13 / MI-06 / MI-07 / MI-15 / MI-17 / I-01b / U-08 / BD-02 | 零风险快赢（配置与校验） |
+| 批次 B（1–2 周） | **PF-03** / B-02 / B-03 / B-06 / B-07 / B-08b / B-09 / L-02 / L-04 / D-02 / PL-07 / PL-09 / PL-12 | 熄屏与后台耗电主线 |
+| 批次 C（2–4 周） | L-01 / U-02~U-17 / D-06 / U-18 / P-08 / P-09 | 卡顿与 GPU 主线 |
+| 批次 D（2–3 周） | S-01~S-04（**✅ 2026-09-26 已实施**）/ S-05~S-07 / S-09~S-11 / I-03 / I-04 / PL-10 | 冷启动主线 |
+| 批次 E（1 周） | N-01 ~ N-05 | 网络与序列化 |
+| 批次 F（1 周） | MI-11 / MI-12 / BD-04 | 后台长任务与更新链路 |
+| 批次 G（1–2 周） | PL-01 ~ PL-04 / PL-11 / PL-12 | 画质与渲染后端 A/B |
+| 批次 H（1–2 天） | BD-01 / BD-06 / A17-09 / FT-01~FT-08 | 构建发布与增强项 |
 
 ---
 
@@ -900,6 +920,554 @@ Android 在 Doze / App Standby 下对后台进程的限制比其它平台严格�
 
 ---
 
+## 12. 第十部分：增量优化实施方案（Android 17 · 小米 15 · 澎湃 OS 4）
+
+> **编制日期：2026-09-26**。本部分是**可执行任务清单**，不是分析。
+> 它做三件事：① 把第 1–11 章的 `⏳ 待办` 改写成任务卡（含落点、步骤、验证命令、回滚）；② 补 9 项前文未编号、但在本机型上收益明确的新增项（`A17-13` / `MI-17` / `PL-11` / `PL-12` / `D-06` / `U-18` / `N-05` / `S-11` / `BD-06`）；③ 给出统一的基线采集、验收线与回滚口径。
+> 所有任务卡都遵守**同一落点纪律**（见 0.2）：能只改 `android/` 就只改 `android/`；必须改 `lib/` 时用 `Platform.isAndroid` / `DeviceUtils.sdkInt` / `PlatformUtils.isMobile` 守卫，**不改 iOS 与桌面行为**。
+
+### 12.1 执行纪律（每张卡都适用）
+
+1. **一次只做一张卡**：一张卡 = 一个 commit，提交信息带编号（`perf(A17-04): network security config`），便于按编号整卡回滚。
+2. **改前先采基线**（12.2），改后**同场景、同亮度、同电量区间**复测。不要用体感当结论。
+3. **完成定义（DoD）**：`dart analyze lib` 不新增 error/warning（当前基线 36 条 info / 0 error）→ release 构建成功 → 真机回归清单通过 → 本卡验收线达标 → 把本报告对应条目的状态改为 ✅ 并在本部分登记。
+4. **构建提醒**：本机 Gradle 全量构建约 2–4 min（`kotlin.incremental=false`，见 BD-02），不要误判为卡死；构建期间**不要**并发跑 `gradlew` 探测命令。
+5. **回归设备**：小米 15（澎湃 OS 4，主）+ 至少一台 Android 12/13 旧机（验证 `Platform.isAndroid`、`sdkInt` 守卫没写反）。
+6. **不要碰**：`lib/common/widgets/flutter/**`（Flutter fork）、`lib/grpc/**` 生成代码、`lib/utils/android/bindings.g.dart`（除按 12.9 手工同步外）。
+
+### 12.2 基线采集（改动前必做一次）
+
+| # | 场景 | 采集命令 | 记录项 |
+| --- | --- | --- | --- |
+| B0 | 待机 8 h（熄屏、不播放） | `adb shell dumpsys batterystats --reset` → 8 h → `adb shell dumpsys batterystats com.example.piliplus` | 电流、wakeup 次数、网络唤醒包数 |
+| B1 | 冷启动到首页可用（5 次取中位） | `adb shell am start -W -n com.example.piliplus/.MainActivity` | `TotalTime`；DevTools Timeline 首帧耗时 |
+| B2 | 1080P60 播放 30 min（含熄屏 10 min） | `dumpsys batterystats` + Perfetto | 平均/峰值 CPU%、电量下降、`AudioHardening` 等级 |
+| B3 | 视频页滚动 + 弹幕 3 min | `adb shell dumpsys gfxinfo com.example.piliplus framestats` | P50/P95 帧时间、jank 比例 |
+| B4 | 热门直播间观看 10 min | DevTools Timeline | UI isolate CPU%、GC 次数、单条消息处理耗时 |
+
+- 采集脚本建议落在 `tool/perf/`（不进构建产物），前后各跑一遍并归档 JSON，避免「凭印象比较」。
+- **B3 用 `flutter run --profile`**；B0/B1/B2 用 release 包（profile 的数据不代表 release）。
+
+### 12.3 全待办矩阵（收益 × 风险 × 工作量）
+
+> 「类别」列说明收益落在哪里：**耗电** = 熄屏/待机电流；**发热** = 持续负载与温控；**流畅** = 帧时间/jank；**启动** = 冷启动；**合规** = 系统要求或功能可用性。工作量按「已熟悉工程」估算。
+
+| 编号 | 一句话 | 类别 | 收益 | 风险 | 工作量 | 依赖 | 批次 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A17-04 | 新增网络安全配置（CT/ECH/明文策略） | 合规 | 中 | 低 | 2 h | — | A |
+| A17-05 | 显式补 `FLAG_GRANT_READ_URI_PERMISSION` | 合规 | 中 | 低 | 3 h | — | A |
+| A17-07 | 字体反射兜底 + `.so` 只读校验 | 稳定 | 中 | 低 | 2 h | — | A |
+| A17-08 | `MessageQueue` 换实现的插件回归 | 确认 | — | — | 1 h | — | A |
+| A17-10 | 旋转后 IME 可见性回归 | 确认 | 低 | 低 | 0.5 h | — | A |
+| A17-13（新） | 部分照片访问 + 选图权限降级 | 体验 | 低 | 低 | 3 h | — | A |
+| MI-06 | 夜间启动图改纯黑 | 观感 | 低 | 极低 | 0.5 h | — | A |
+| MI-07 | 16 KB 页对齐校验（发布前置） | 合规 | 高 | 低 | 2 h | — | A |
+| MI-17（新） | 持续性能模式 × 澎湃性能模式实测收口 | 发热 | 中 | 极低 | 2 h | MI-15 | A |
+| I-01b | 缓存体积统计不再递归 `stat` | 耗电 | 低 | 低 | 1 h | — | A |
+| U-08 | 相对时间缓存 | 流畅 | 低 | 低 | 1 h | — | A |
+| BD-02 | 关闭 `enableJetifier` | 构建 | 低 | 低 | 1 h | — | A |
+| MI-15 | 持续性能模式验证收口 | 发热 | 中 | 极低 | 2 h | — | A |
+| **PF-03** | **应用可见性统一门控（一批定时器收口）** | **耗电** | **高** | 中 | **3–5 d** | — | **B** |
+| B-02 | 回前台/切 Tab 请求合并去重 | 耗电 | 中 | 低 | 1 d | PF-03 | B |
+| B-03 | 「同时在看」10 s 轮询不可见即停 | 耗电 | 中 | 低 | 0.5 d | PF-03 | B |
+| B-06 | 登录二维码 1 s 轮询退页即停 | 耗电 | 低 | 低 | 0.5 d | PF-03 | B |
+| B-07 | 定时关闭 1 s 倒计时不可见暂停 | 耗电 | 低 | 低 | 0.5 d | PF-03 | B |
+| B-08b | 通知渠道细分 + 位置更新节流 | 耗电 | 中 | 低 | 1 d | MI-11 | B |
+| B-09 | 其余定时器统一治理 | 耗电 | 中 | 低 | 2 d | PF-03 | B |
+| L-02 | 直播 WSS 不可见即断开 | 耗电 | 中 | 低 | 0.5 d | PF-03 | B |
+| L-04 | 直播间 5 min 定时器不可见暂停 | 耗电 | 低 | 低 | 0.5 d | PF-03 | B |
+| D-02 | 弹幕 Canvas 不可见暂停 | 发热 | 中 | 低 | 0.5 d | PF-03 | B |
+| PL-07 | 直播缓冲按内存分级 + 弱网降档 | 耗电 | 中 | 低 | 1 d | PF-03 | B |
+| PL-09 | 导出路径 mpv 实例生命周期回归 | 内存 | 低 | 低 | 2 h | — | B |
+| PL-12（新） | 移动网络不预取 + 弱网自动降清晰度 | 耗电 | 中 | 中 | 1.5 d | N-05 | B |
+| **L-01** | **直播弹幕解析移出 UI isolate** | **发热** | **高** | 中 | **2 d** | — | **C** |
+| U-02 | 评论正则 + `TextSpan` 缓存 | 流畅 | 高 | 低 | 1 d | — | C |
+| U-05 | 顶栏/底栏滚动 offset 改 `ValueListenableBuilder` | 流畅 | 中 | 低 | 1 d | — | C |
+| U-17 | `ThemeData` memo 化 | 流畅 | 中 | 低 | 0.5 d | — | C |
+| U-04 / U-16 | `Obx` 拆分（列表与加载态分离） | 流畅 | 中 | 低 | 1 d | — | C |
+| U-06 / U-09 / U-10 / L-05 | 去 `Opacity` / 去多余 `saveLayer` / 统一缩略图 | 流畅 | 中 | 低 | 1 d | — | C |
+| U-14 / U-15 | `cacheExtent` / `prototypeItem` / 懒加载补齐 | 流畅 | 中 | 低 | 1 d | — | C |
+| U-03 / U-07 / U-11 / U-12 / U-13 | 局部更新、去 `LayoutBuilder`、边界与 `Hero` tag 治理 | 流畅 | 低 | 低 | 1.5 d | — | C |
+| D-06（新） | 弹幕 `TextPainter` 缓存 | 发热 | 中 | 低 | 1 d | — | C |
+| U-18（新） | 液体玻璃 `BackdropFilter` 成本治理 | 耗电 | 中 | 中 | 1 d | — | C |
+| P-08 / P-09 | 视频页每帧级重建收口（`_animListener` / 悬浮工具栏） | 流畅 | 中 | 中 | 1.5 d | — | C |
+| S-01 ~ S-04 | 启动流程重排（去 await / 延迟初始化） | 启动 | 高 | 中 | 2–3 d | A17-01 | **D ✅ 已实施** |
+| S-05 / S-06 / S-07 / S-09 / S-10 | 启动请求合并、GetX 生命周期、路由懒构造 | 启动 | 中 | 中 | 2 d | S-01 | D |
+| S-11（新） | 启动期原生调用时序重排（不抢首帧） | 启动 | 中 | 低 | 0.5 d | — | D |
+| I-03 / I-04 | `Pref` 读时写盘、字体/JNI 后移 | 启动 | 低 | 低 | 1 d | S-01 | D |
+| PL-10 | 播放器实例复用复核 | 启动 | 中 | 中 | 1 d | S-02 | D |
+| N-01 | gRPC 解析 `isolate: true` | 流畅 | 高 | 低 | 0.5 d | — | **E** |
+| N-02 | `responseDecoder` 异步化（解压离开主 isolate） | 流畅 | 中 | 中 | 1 d | — | E |
+| N-03 | 主 isolate 逐条 `jsonDecode` 清单 | 流畅 | 中 | 低 | 1 d | — | E |
+| N-05（新） | 连接复用与网络切换策略 | 耗电 | 中 | 低 | 0.5 d | — | E |
+| N-04 | HTTP/2 评估（只测不默认开） | 耗电 | 低 | 中 | 1 d | — | E |
+| MI-11 | 下载/导出改前台服务 | 功能 | 高 | 中 | 2–3 d | — | **F** |
+| MI-12 | 应用内更新安装链路 | 功能 | 高 | 中 | 2–3 d | MI-11 / MI-13 | F |
+| BD-04 | 正式签名 + 更新检查后移 | 发布 | 中 | 低 | 2 h | MI-12 | F |
+| PL-01 | Impeller A/B 决策 | 流畅 | 中 | 中 | 1 d | — | **G** |
+| PL-02 | `vo` / `gpu-api` 组合实测 | 流畅 | 中 | 中 | 1 d | — | G |
+| PL-03 | HDR 输出与 tone-mapping | 画质 | 高 | 中 | 2–3 d | PL-01/02 | G |
+| PL-04b | `hwdec-codecs` 白名单 | 稳定 | 中 | 低 | 2 h | — | G |
+| PL-11（新） | 解码线程数与功耗曲线 | 发热 | 中 | 中 | 1 d | — | G |
+| BD-01 | release 开 R8 + 资源压缩 | 发布 | 中 | 中 | 1 d | PL-09 | **H** |
+| BD-06（新） | 符号表留存与体积核算 | 发布 | 低 | 低 | 2 h | BD-01 | H |
+| A17-09 | 大屏（sw≥600dp）方向策略 | 合规 | 中（非本机） | 低 | 1 d | — | H |
+| FT-01 ~ FT-08 | 功能增强（快捷方式/通知渠道/图标/语言等） | 体验 | 低 | 低 | 视项而定 | — | 择机 |
+
+---
+
+### 12.4 批次 A —— 零风险快赢（1 天）
+
+> 全部落在 `android/`、配置或纯上限调整，**不改业务逻辑**，可以在一个工作日内全部完成并出包。这一批还有一个附带价值：把 12.2 的采集脚本跑通。
+
+#### A17-04 网络安全配置
+
+- **目标**：把「明文策略 + CT/ECH 开关」变成可追溯的配置文件，为 `usesCleartextTraffic` 弃用做准备。
+- **步骤**
+  1. 新建 `android/app/src/main/res/xml/network_security_config.xml`（当前 `res/` 下只有 `xml-v25/`，需要新建 `xml/` 目录；`minSdk=24`，放 `xml/` 即可全版本生效）：
+     - `<base-config cleartextTrafficPermitted="false">`（与当前默认行为一致，因为 targetSdk 37 默认就禁止明文）；
+     - 文件内以**注释**形式保留 `<domain-encryption>`（ECH）与 `<domain-config cleartextTrafficPermitted="true">` 的写法样例 + 排障说明，**默认不启用**。
+  2. `AndroidManifest.xml` 的 `<application>` 加 `android:networkSecurityConfig="@xml/network_security_config"`。
+  3. 自检：`lib/`、`android/` 里 grep `http://`，确认无硬编码明文依赖（用户自定义代理/镜像除外，属运行时配置，不受影响）。
+- **验证**：`adb shell dumpsys package com.example.piliplus | Select-String networkSecurityConfig`；登录、播放、投屏、WebView、更新检查各跑一次。
+- **回滚**：删属性即可（无行为变化，因此风险极低）。
+- **注意**：若实测出现某 CDN 证书链缺 SCT 导致 TLS 失败，**只对该域**加 `cleartextTrafficPermitted` 或 `<domainEncryption>disabled</domainEncryption>`，不要全局关。
+
+#### MI-07 16 KB 页对齐校验
+
+- **步骤**
+  1. `adb shell getconf PAGE_SIZE`（16384 = 16 KB 设备）。
+  2. `zipalign -c -P 16 -v 4 build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`（build-tools 37.0.0 自带）。
+  3. 对 `libmpv.so` / `libjni.so` 检查 ELF LOAD 段 `Align` 应为 `0x4000`：`llvm-readelf -l <解包后的 .so>`（NDK 28.2 自带）。
+  4. 未对齐时：升级 `media_kit` 版本或按其源码用 NDK 重编，**不要**改 `useLegacyPackaging` 绕过。
+- **验收线**：`zipalign` 返回 0 且无 `-P 16` 告警。
+- **回滚**：只读校验，无需回滚。
+
+#### MI-06 夜间启动图改纯黑
+
+- `android/app/src/main/res/values-night-v31/styles.xml` 的 `windowSplashScreenBackground` 由 `#212121` 改 `#000000`；同步看 `values-night/styles.xml`。回归一次冷启动闪屏观感（含 Android 12+ 图标动画）。
+
+#### MI-17（新）持续性能模式 × 澎湃性能模式实测收口
+
+- **背景**：MI-15 已在播放期调 `setSustainedPerformanceMode(true)`，但澎湃 OS 的「性能模式 / 均衡模式」会改变 SoC 调度点，两者的叠加效果**未实测**。
+- **步骤**
+  1. 场景：1080P60 播放 30 min，分别取「性能模式」「均衡模式」两轮，每轮记录 `adb shell dumpsys thermalservice`（每 5 min 一次）+ `dumpsys batterystats`。
+  2. 对照：`setSustainedPerformanceMode` 开 / 关各一轮（临时在设置里加调试开关，测完删除）。
+  3. 判读：若开启后帧时间 P95 改善 < 5% 而电流上升 > 5%，则把默认值改为「仅插电时开启」。
+- **产出**：把结论写回 MI-15 条目 + 决定默认值。
+
+#### 其余 A 批卡（表格）
+
+| 卡 | 步骤要点 | 验证 |
+| --- | --- | --- |
+| A17-05 | `AndroidHelper.openUrl()` 与分享链路补 `FLAG_GRANT_READ_URI_PERMISSION`；拍照补 WRITE；临时文件统一走 `FileProvider` | `adb logcat` 无 `Please set the grant explicitly in the app` |
+| A17-07 | `AndroidHelper.fontFamilies()` 失败返回 null，UI 回退内置字体列表；确认所有 `.so` 从 `/data/app/.../lib/arm64/` 只读加载 | 启动/播放/投屏/选图/字体页/PiP/快捷方式各回归一次 |
+| A17-08 | 只做回归（WebView 播放与全屏、保存图片、通知控制、裁剪、PiP、投屏） | 任一环节崩溃即改用公开 API |
+| A17-10 | 竖屏输入 → 旋转 → 看键盘与焦点（搜索/弹幕/评论/私信 4 处） | 键盘不消失、焦点不丢 |
+| A17-13（新） | 清单加 `READ_MEDIA_VISUAL_USER_SELECTED`（Android 14+），选图被部分授权时提示「仅可选择部分照片」并提供「更多照片」入口 | Android 14+ 选图页出现「选择更多照片」 |
+| I-01b | `cache_manager.dart` 的体积统计改走 `flutter_cache_manager` 的公开接口（或按目录深度上限），去掉全目录递归 `stat` | 「设置 → 缓存」打开耗时从秒级降到 < 200 ms |
+| U-08 | 相对时间用 `Map<int, String>`（按分钟粒度）缓存，`dispose` 时清理 | 列表滚动 `build` 内不再有 `DateTime` 差值计算 |
+| BD-02 | 关 `android.enableJetifier=true` → 跑一次 release 构建 | 构建成功且警告中无 Support Library 相关 |
+| MI-15 | 确认播放/暂停/退出三处的开关注入与释放无泄漏（`adb shell dumpsys SurfaceFlinger` 无关，看 logcat 无异常） | 退出播放页后不再持有 sustained 标记 |
+
+---
+
+### 12.5 批次 B —— 后台/熄屏耗电主线（1–2 周）
+
+> **这是本方案收益最高的一批**。B0 场景（待机 8 h）的电流主要来自两处：① 熄灭屏幕后仍在跑的定时器与网络轮询；② 播放期/后台的显示与音频子系统。②已由 A17-01 / MI-02 / MI-04 处理，① 还没有。
+
+#### 12.5.1 PF-03 应用可见性统一门控（核心卡）
+
+**问题**：全仓 `Timer.periodic` / `Timer` 共 135 处命中、43 个文件（含 Flutter fork）。其中真正会在熄屏后继续跑的至少 11 处，分散在 9 个文件，逐个加判断容易漏、也难验证。
+
+**设计**：新增一个「可见性门控」服务，**复用** `power_save_watcher.dart` 里已有的 `_LifecycleWatcher`（把它提取出来共用，避免注册两个 `WidgetsBindingObserver`）。
+
+- 新文件 `lib/services/app_visibility_gate.dart`（仅移动端生效；桌面恒为 `true`）：
+
+```dart
+// 仅移动端：应用可见性 + 定时器统一门控（性能报告 PF-03）
+abstract final class AppVisibilityGate {
+  static final RxBool visible = true.obs;
+  static bool get isVisible => visible.value;
+
+  /// 注册一个「仅在应用可见时运行」的周期任务；不可见时自动 cancel。
+  static Timer gatedPeriodic(
+    Duration interval,
+    void Function(Timer t) callback, {
+    String? debugName,
+  });
+
+  /// 一次性延迟任务：不可见时挂起，回到前台后按剩余时间补跑一次。
+  static void gatedTimeout(Duration delay, void Function() callback);
+
+  /// 播放/弹幕这类「有自己生命周期」的对象用这个登记，不可见时暂停、可见时恢复。
+  static void registerPausable(void Function(bool visible) onVisibilityChanged);
+}
+```
+
+- 实现要点（四道必须的防线）：
+  1. **`isVisible` 的真值来源**：`AppLifecycleState.resumed` 才是可见；`inactive`（下拉通知栏、来电阻断）**不算**不可见，否则会误停播放心跳。PiP 期间原生回调（`AndroidHelper.isPipMode`）视为可见（与 A17-01 的豁免一致）。
+  2. **可见性恢复时不要「补跑」定时器的全部欠账**：只跑一次，不要 for 循环补齐（否则回前台瞬间产生请求突发，与 B-02 冲突）。
+  3. **`gatedPeriodic` 返回 `Timer`**，调用点原有的 `cancel()` 语义不变 → 改造是「把 `Timer.periodic` 换成 `AppVisibilityGate.gatedPeriodic`」，一行级替换，便于 code review。
+  4. **`PowerSaveWatcher` 迁移到同一门控**：现在它有独立的 `_LifecycleWatcher`（`_startTimer`/`_stopTimer`），迁移后只有一个 observer；迁移时要保证「3 分钟轮询」与「进入可见立即复评」的行为不变。
+- 扩展：`DeviceState` 增加 `isVisible`，让 `DanmakuOptions` 这类底层可以同步读到（现在只读 `isLowPower`）。
+
+**改造登记表（本卡的全部落点）**
+
+| 文件 | 现行为 | 改造后 | 关联编号 |
+| --- | --- | --- | --- |
+| `lib/pages/common/common_intro_controller.dart:92` | 10 s 轮询「同时在看」 | 可见才跑；不可见 cancel | B-03 |
+| `lib/pages/login/controller.dart:78` | 1 s 轮询二维码状态 | 不可见挂起，回前台恢复（**不要**在别处页面继续轮询） | B-06 |
+| `lib/services/shutdown_timer_service.dart:406` | 1 s 倒计时 | 不可见时按墙钟时间重算，而不是每秒 tick | B-07 |
+| `lib/pages/live_room/controller.dart:75` | 直播间 `liveTime` 5 min 定时 | 不可见暂停 | L-04 |
+| `lib/pages/live_room/view.dart:193-205` | 直播间 WSS 常驻 | 不可见断开，回前台重连（`controller.dart:414-417`） | L-02 |
+| `lib/pages/danmaku/view.dart:81-90` | 弹幕 Canvas 持续重绘 | 不可见暂停重绘（并把 `TickerMode` 与门控对齐） | D-02 |
+| `lib/tcp/live.dart:250` | 30 s 心跳 | 跟随 WSS 生命周期（断开即停） | L-02 |
+| `lib/pages/live_room/superchat/superchat_card.dart:67/88` | 每条 SC 一个 1 s 定时器 | 改为单一 Ticker（L-03）或并入门控 | L-03 |
+| `lib/pages/video/widgets/header_control.dart:105` | 播放信息时钟 1 s | 不可见/暂停时停 | B-09 |
+| `lib/pages/common/common_page.dart:118` | 栏位收尾补间 16 ms（220 ms 后自停） | **无需改**（生命周期极短，属白名单） | — |
+| `lib/utils/json_file_handler.dart:95` | 5 s 批量 flush | **无需改**（写盘抖动，收益大成本低） | — |
+
+- **验收线**：B0 场景 wakeup 次数下降 ≥ 40%，待机电流下降 ≥ 30%，logcat 里 10 s / 1 s 量级的周期性日志在熄屏后归零。
+- **回滚**：单提交回滚；门控本身是「旁路」，不改业务返回值。
+- **分步提交建议**（便于定位回归）：① 只建 `AppVisibilityGate` + `PowerSaveWatcher` 迁移（行为不变）→ ② 改 4 个业务轮询 → ③ 改直播/弹幕（风险最高，放最后）。
+
+#### 12.5.2 播放侧耗电收口
+
+| 卡 | 步骤要点 | 验收 |
+| --- | --- | --- |
+| PL-07 | 直播 `demuxer-max-bytes` 系数按 `MemoryBudget` 分级（低内存 1×，其它 2×）；断流重连优先 `loadfile` 同源重连，不重建 mpv 实例 | 直播间 10 min 内存峰值下降，重连不再黑屏重建 |
+| PL-12（新） | 接 `ConnectivityResult`：移动网络下不预取下一 P（`demuxer-readahead-secs` 降档）、不自动加载弹幕分段；Wi-Fi→移动切换时提示「已切到移动网络，是否降低清晰度」 | 移动网络下 10 min 流量下降 ≥ 30% |
+| PL-09 | 复核导出（WebP）路径一定调用 `Initializer.dispose`；与 `MemoryBudget` 一起核算 4K 导出峰值 | 连续导出 10 次后 native 内存不单调上涨 |
+| B-08b | 通知渠道拆成「播放控制 / 下载进度 / 应用更新」三条；`MediaItem.artwork` 补全封面；位置更新节流（进度秒数变化才推） | 澎湃媒体控件/锁屏显示封面；熄屏播放时通知刷新次数下降 |
+| PL-10 | 复核「退出视频页 → 进另一个视频」是否复用 `Player` 实例；`preInitPlayer` 保持默认 false | 第二次进入播放页起播耗时下降 |
+
+#### 12.5.3 B-02 回前台请求突发
+
+- 位置：`lib/pages/main/view.dart:95-117`（`didPopNext` 3 个未读检查）、`controller.dart:216-310`（切 Tab 拉取）。
+- 做法：给这三处套一层 300–500 ms 合并窗口（`Debouncer`）+ 「同一会话内 30 s 内不重复请求」。注意与 `route_aware_mixin.dart` 的 `runAfterRouteAnimation()` 配合：合并窗口应加在**动画结束之后**，避免又把成本搬回转场那一帧。
+
+---
+
+### 12.6 批次 C —— 卡顿与 GPU 主线（2–4 周）
+
+> 目标：视频页滚动 + 弹幕场景 jank < 1%，直播间 UI isolate CPU 下降 ≥ 50%。改动集中在「每帧级重建」和「每帧级 saveLayer」两类。
+
+#### C1 · U-02 评论渲染缓存（收益最高的一张卡）
+
+- **现状**：`lib/pages/video/reply/widgets/reply_item_grpc.dart:734-739` 每次 `build` 都把 `specialTokens` 拼成 pattern 再 `RegExp(patternStr)`；`lib/pages/video/reply_reply/**` 有同款代码。
+- **做法**
+  1. 把「pattern 字符串 → `RegExp`」抽成**静态 LRU**（容量 64，key = pattern 字符串）。`RegExp` 是不可变对象，跨实例复用安全。
+  2. `TextSpan` 树按 `(text, styleHash, emoteVersion)` 缓存：`styleHash` 用 `Object.hash(fontSize, fontWeight, color.value)`；`emoteVersion` 用「表情包列表长度 + 最近更新时间」这类廉价值。缓存条目数上限 300，超出按 LRU 淘汰。
+  3. 缓存挂在 `State` 上（而不是全局 static），并在 `dispose` 释放 —— 避免「用户改了字号/主题，列表仍显示旧渲染」。
+- **验证**：B3 场景 P95 帧时间下降；`flutter run --profile` + DevTools CPU profiler 中 `RegExp` / `TextPainter.layout` 占比下降。
+- **回滚**：缓存开关 + 单提交回滚。
+
+#### C2 · U-05 顶栏/底栏滚动 offset
+
+- **现状**：`lib/pages/common/common_page.dart:70-95` 每滚动帧写 `RxDouble` → 顶栏/底栏与其子树每帧 `markNeedsBuild`。
+- **做法**：`barOffset` 改成 `ValueNotifier<double>`；消费端（`main/view.dart:382-395`、`home/view.dart:104-118`）改 `ValueListenableBuilder`，只重 build「真正依赖 offset 的那一层」（`Transform`/`Padding` 包装层），不要包住搜索框、导航项图标。
+- **注意**：`common_page.dart:118` 的收尾补间（`Timer.periodic(16ms)`）继续写同一个 `ValueNotifier`，与手指拖动仍共用同一数据源，因此不会跳位置。
+- **验收**：B3 场景滚动时 `dumpsys gfxinfo` 的 `Number Missed Vsync` 下降；`flutter --profile` 下 `Widget rebuild` 次数下降 ≥ 50%。
+
+#### C3 · U-17 `ThemeData` memo 化
+
+- **现状**：`lib/main.dart:250-288` 每次 `MyApp` build 都重建两套完整 `ThemeData`（`theme_utils.dart:23-60`、`theme_ext.dart:36-43`）。
+- **做法**：按 `Object.hash(brightness, seedColor, isPureBlackTheme, appFontWeight, defaultTextScale, useMaterial3, …)` 缓存，命中直接返回。**必须**保证「切换主题色/纯黑/字重」都会让 key 变化（把 `refreshDynamicColor()` 的 `Get.updateMyAppTheme()` 一并纳入）。
+- **验证**：切换主题色立即生效（无缓存陈旧）；`main.dart` 附近 `build` 耗时下降。
+
+#### C4 · 去 `saveLayer` / `Opacity` 清单
+
+| 位置 | 现状 | 替换写法 |
+| --- | --- | --- |
+| `lib/pages/video/view.dart:634` | 悬浮工具栏包 `Opacity` | `AnimatedOpacity` 只在 0↔1 过渡，或直接把不透明度折进 `Color`（`withValues`） |
+| `lib/pages/live_room/view.dart:394-399`、`:412` | 全屏背景图 `Opacity` + `saveLayer` | 颜色叠加 / `Image` + `ColorFiltered`，避免每帧 `saveLayer` |
+| `lib/pages/dynamics/widgets/up_panel.dart:220`、`expandable.dart:99`、`mini_scaffold.dart:215` | `Opacity` 反模式 | 同上；若必须动画则 `AnimatedOpacity` + `RepaintBoundary` 隔离 |
+| `network_img_layer.dart:47-56` | `ClipRRect` 默认 `antiAlias` + 未限定尺寸 | 明确 `memCacheWidth/Height` + 首层 `ClipRRect`；圆角为 0 时直接不要 `ClipRRect` |
+| `pendant_avatar.dart:71-76` | 同上 | 同上 |
+| `live_room/view.dart:394-399`、`image_utils.dart:199-215` | 绕过缩略图取原图 | 统一走 `@Nq.webp` 缩略图（U-10） |
+
+- **验收**：`flutter run --profile --trace-skia`，`saveLayer` 次数在同一场景下下降 ≥ 50%。
+
+#### C5 · 列表参数补齐（低风险、机械）
+
+- `cacheExtent` / `prototypeItem` / `itemExtent` 补齐：`rcmd/view.dart:44-73`、`dynamics_tab/view.dart:78-101`、`reply/view.dart:167`（U-14）。
+- `search/view.dart:140` 建议列表懒加载（U-15）。
+- `ImageGridBuilder` 按需加 `RepaintBoundary`（U-11）；`Hero` tag 改用稳定 id（U-12）；`video/view.dart:1388-1404` 的 `TabController` 副作用移出 `build`（U-13）。
+- 局部更新替代整表 `refresh()`：`reply_controller.dart:204-243`（U-03）；`up_panel.dart:131-135` 局部重建（U-16）；`video_card_*` 里的 `LayoutBuilder` → `AspectRatio`（U-07）。
+
+#### C6 · 视频页每帧级重建收口（风险中，必须真机 profile 前后对比）
+
+- `lib/pages/video/controller.dart:200` `_animListener` 每帧 `_calcAnimHeight()` + `refreshPage()`（`markNeedsBuild` 整个 `ExtendedNestedScrollView`）。200 ms 展开收起期间跑，滚动时不跑。
+  - **做法**：把「高度」改成 `ValueListenable<double>`，只让 `AnimatedContainer`/`SizedBox` 那一层监听，不要刷新整个页面。
+- `lib/pages/video/view.dart:634` 悬浮工具栏每滚动帧整条 `Obx` 重建 → 拆 `Obx`（U-04），只让 `Transform.translate` 依赖 offset。
+- `lib/pages/video/reply_reply/view.dart:214` 等「列表与加载态共用一个 `Obx`」→ 拆分。
+- **回滚**：这两处是主交互路径，必须一个卡一个 commit，且保留「改动前 / 后」各一段录屏对比。
+
+#### C7 · L-01 直播弹幕解析移出 UI isolate（收益最高、风险中）
+
+- **现状**：`lib/pages/live_room/controller.dart:577-690` 里 `jsonDecode(content['extra'])`（`:592`）、`BaseEmote.fromJson`（`:596`/`:619`）、`UinfoMedal.fromJson`（`:626`）、`SuperChatItem.fromJson`（`:641`）全部在 UI isolate；热点房间 1000+ 条/分钟。
+- **做法（长驻 worker isolate，而不是每条 `compute`）**
+  1. 新建 `lib/pages/live_room/isolate/danmaku_parser.dart`：`Isolate.spawn` 一个常驻 worker，协议为「批」——主 isolate 把原始 `String` 攒 20 条或 50 ms（先到者触发）后一次发过去。
+  2. worker 内做 `jsonDecode` + `fromJson`，把**已构造好的模型对象**发回（Dart 3 同 isolate group 可传普通对象；`BaseEmote`/`SuperChatItem` 都是普通类）。
+  3. **背压**：主 isolate 侧队列上限 500，超限丢最旧；丢弃计数打到 debug 日志。
+  4. **降级**：`Isolate.spawn` 失败或 worker 超时 3 s 无响应 → 退回原同步路径（保证直播不因优化而不可用）。
+  5. 生命周期：`LiveRoomController.onClose` 里 `worker.kill()`；切房间不重建 worker。
+- **注意**：不要用 `compute` 逐条解析（每条一次 isolate 往返，开销比解析本身还大）。
+- **验收**：B4 场景 UI isolate CPU 下降 ≥ 50%，GC 次数明显下降，弹幕显示延迟（发送 → 上屏）不增加超过 50 ms。
+
+#### C8 · D-06（新）弹幕 `TextPainter` 缓存
+
+- **背景**：弹幕每帧对每条弹幕 `TextPainter.layout()`；文本重复率极高（「哈哈哈」「前方高能」「？？？」等），而 `layout()` 是 CPU 大项。
+- **做法**：在 `lib/pages/danmaku/view.dart` 的渲染层加 `TextPainter` LRU（容量 512），key = `(text, fontSize, fontWeight)`；`TextPainter` 只复用布局结果（`paint` 时按各自颜色绘制，颜色不进 key）。文本长度 > 32 不缓存（避免长文本占满缓存）。
+- **验证**：B3（视频弹幕）与 B4（直播弹幕）场景 UI isolate CPU 下降；`TextPainter.layout` 在 profiler 中占比下降 ≥ 30%。
+- **回滚**：缓存是纯旁路，删除即回原行为。
+
+#### C9 · U-18（新）液体玻璃 `BackdropFilter` 的 GPU 成本治理
+
+- **背景**：`lib/common/widgets/liquid_glass.dart` 的 `BackdropFilter` 每帧对「其覆盖的整块区域」做一次模糊采样；顶栏 + 底栏常驻，视频页滚动时是 GPU 上最贵的一项（与 MI-02 的高刷叠加，功耗近似线性上升）。
+- **做法**
+  1. **面积审计**：确认每个使用点的 `BackdropFilter` 尺寸 == 可见玻璃区域（顶栏收起时应同步收缩；不要让玻璃层覆盖到屏幕外或整屏）。
+  2. **数量审计**：只允许「顶栏 / 底栏 / 主 Tab 页顶部」使用玻璃；弹窗、卡片、设置页项一律改用半透明纯色。
+  3. **低功耗降级**：`DeviceState.isLowPower` 或「视频页正在播放」时把 `_kBlurSigma` 降为 0（改为不透明半透明色）—— 与 MI-04 的降档动作并列，退出后恢复。
+  4. 玻璃层内**不要**再叠 `Opacity` 或 `BoxShadow`（`BoxShadow` 会连内部一起刷，见第 11 章以外的实现备注）。
+- **验证**：`flutter run --profile --trace-skia`，同场景 `saveLayer` 与 `blur` 时间下降 ≥ 50%；B3 帧时间 P95 改善。
+- **风险**：属用户刚定稿的 UI（2026-09-25），**只做「不改变视觉」的优化**（1、2、4 项）；第 3 项必须做成开关，默认关，由用户决定是否在低功耗下接受观感变化。
+
+---
+
+### 12.7 批次 D —— 冷启动主线（2–3 周）
+
+> 目标：B1 冷启动首帧下降 ≥ 25%（目标 < 1.2 s）。
+> **进度：S-01 ~ S-04 已于 2026-09-26 实施（见下方各卡「已实施」小节）；S-05 及以后待办。**
+
+#### S-01 去 `await` 但**不破坏 A17-01 的 WIU 要求** ★★★ ✅ 已实施
+
+- **冲突点**：S-01 希望不要 `await setupServiceLocator()`（省 100–300 ms）；A17-01 又要求「FGS 必须在音频写入之前进入前台」。这两者可以同时满足：**发起** `AudioService.init`（不 await）仍然满足 WIU —— 因为此时 App 在前台可见，系统会把该 FGS 判定为具备 WIU 能力。
+- **已实施（2026-09-26）**
+  1. `lib/services/service_locator.dart`：`setupServiceLocator()` 改为**同步发起**（返回 `Future<void>` 但不再 `await`），新增 `ensureServiceLocator()` 供需要 handler 的地方等待；`_audioServiceInit` 缓存 future，重复调用不会重复初始化；`audioSessionHandler` 用 `??=` 保留首次实例。
+  2. `lib/main.dart`：移动端分支不再把 `setupServiceLocator()` 放进 `Future.wait`，改为先 `setupServiceLocator();` 再只等方向设置；macOS 分支同样改为「先发起、再 `await ensureServiceLocator()`」，行为不变。
+  3. 三个「假定非空」的调用点改为先等待：`lib/pages/setting/models/play_settings.dart`（后台画中画 / 后台音频服务两个 `onChanged`）、`lib/plugin/pl_player/controller.dart` 的 `play()`（必须保证前台服务先于音频写入）。
+  4. 其余 null-safe 消费点（`videoPlayerServiceHandler?....`）不改：它们都由用户交互触发，此时初始化早已完成。
+  5. **失败处理（2026-09-26 复核时补的加固）**：`setupServiceLocator()` 用 `.then(onError:)` 在 Future **内部**消化初始化失败 —— 否则「发起但不等待」会变成未捕获的异步异常，而 `await ensureServiceLocator()` 会把异常招进 `play()`（表现成「点播放没反应」）。失败时 `videoPlayerServiceHandler` 保持 null、所有消费方 `?.` 降级；`play_settings.dart` 两处 `videoPlayerServiceHandler!` 也改成 `?.` / `?? false`（否则初始化失败时拨动开关会崩）。
+- **必须回归**：冷启动后**立刻**点播放（首帧后 1 s 内）仍有声音；后台播放、通知控制条、锁屏控件正常；`adb dumpsys audio` 的 `AudioHardening` 不出现 `level: partial`。
+- **回滚**：一个提交即可回滚到 `await` 版本。
+
+#### S-02 ~ S-04 与 S-11（新）
+
+| 卡 | 做法 | 风险 |
+| --- | --- | --- |
+| S-02 ★★ | ✅ **已实施**：`MediaKit.ensureInitialized()` 依赖 `AndroidHelper` + `NativeLibrary.ensureInitialized`，最终会 `DynamicLibrary.open('libmpv.so')`（**不是**「只是注册」——本报告初版这句话有误，已核实 media_kit 1.1.11 源码：`NativeLibrary.path` 未初始化会直接抛异常，而 `NativePlayer.mpv` 就是 `DynamicLibrary.open(NativeLibrary.path)`）。现改为首帧后 `addPostFrameCallback → ensureMediaKitInitialized()`，并在 4 个创建播放器的位置（`pl_player/controller.dart:_initPlayer`、`audio/controller.dart:_initPlayerIfNeeded`、`gallery_viewer.dart:_initPlayer`、`mpv_convert_webp.dart:_init`）补幂等守卫；`Pref.enableLog` 分支里读 `NativePlayer.apiVersion` 前也补了守卫。顺带确认 `Pref.preInitPlayer` 默认已是 `false` | 低 |
+| S-03 ★★ | ✅ **已实施**：不再「先测量再决定」——把 `MyApp.initPlatformState()` 改为与其它启动工作**并行发起**（`dynamicColorReady` 进入同一个 `Future.wait`），仍然在 `runApp` 前完成，因此**不会**闪默认配色；平台通道等待被别的初始化掩盖 | 低 |
+| S-04 ★★ | ✅ **已实施**：`GStorage.init()` 拆为 `initHot()`（`setting` / `localCache` / `userInfo` + `Accounts.init()` 阻塞打开）+ `openColdBoxes()`（`historyWord` / `video` / `watchProgress` / `reply`）。`main()` 里 `coldBoxes` 与路径、缓存、内存预算、字体、动态取色**并发**等待，仍在 `runApp` 之前全部就绪 —— 因此访问语义与改动前**完全一致**（`late final` 字段不会被提前访问），只是不再串行占在关键路径上。没有采用「首帧后打开 + 按需等待」的强惰性方案（会引入 `LateInitializationError` 风险，收益不足以抵消）。**另：冷 box 的失败路径与改动前保持一致**（`main.dart` 的 `_exitOnStorageError`：拷贝错误信息后 `exit(0)`），不会变成 `Future.wait` 里的未捕获异常（那就变成「卡在启动画面」）。已逐项核对并发块里的调用（`_initDownPath` / `_initTmpPath` / `CacheManager` / `MemoryBudget` / `FontUtils` / 动态取色）**只碰 `setting` / `localCache` 这类热 box**，`downloadPath` / `maxCacheSize` / `dynamicColor` / `uiScale` 均为 `_setting`） | 中 |
+| S-11（新） | 把 `SystemChrome.setEnabledSystemUIMode`、`DisplayModeUtils.init()`、`PowerSaveWatcher.init()` 移出「首帧前阻塞路径」：`SystemChrome` 保留（要避免首帧闪烁），后两者改为 `addPostFrameCallback` 里调用。`DisplayModeUtils.init()` 内部会写用户档位并做 1.2 s 回读，与首帧竞争会放大掉帧 | 低 |
+| S-05 | 冷启动并发 8+ 请求：更新检查移到首帧后（BD-04），`wbi` 签名前置保留（是后续请求的依赖），其余按「可见性 + 500 ms 合并」延后 | 中 |
+| S-06 / S-07 | `Get.put` → `binding` + `Get.delete`；`app_pages.dart` 70+ 路由保持注册但把「重量级 Controller」改为页面内 `lazyPut`（不要一次构造） | 中 |
+| S-09 / S-10 | 切 Tab 网络抖动加缓存/防抖；`nav_bar_config.dart` 枚举里的 widget 改延迟构造 | 低 |
+| I-03 / I-04 | `Pref` 的「读时写盘」改为显式写入（先找 4 处已标注的位置）；字体/JNI 调用后移 | 低 |
+| PL-10 | 播放器实例复用复核（与 S-02 一起做） | 中 |
+
+---
+
+### 12.8 批次 E —— 网络与序列化（1 周）
+
+#### N-01 gRPC 解析 isolate（最便宜的一张大卡）
+
+- 现状：`lib/grpc/grpc_req.dart` **已经支持** `isolate: true`（默认 false，且只在 `data.length > 256 KB` 时才 `compute`）。
+- 做法：把 `isolate` 参数在调用点传 `true`（`lib/grpc/dm.dart:21`、`lib/pages/main/controller.dart:200-208` 等），并把阈值 `_isolateSize` 由 256 KB 降到 **64 KB**（`compute` 一次往返 ≈ 1–3 ms，64 KB 以上解析 + gzip 解压的收益已经为正）。
+- 验收：首页/动态页首屏 `grpc` 解析不再出现在 UI isolate 的 CPU 火焰图里；B1/B3 场景 CPU 下降。
+
+#### N-02 `responseDecoder` 异步化
+
+- 现状核实（对照 dio 5.11.1 源码）：`dio.transformer = BackgroundTransformer()`，但它 `extends SyncTransformer`，**只在 `jsonDecode` 且文本 ≥ 50 KB 时才 `compute`**；`responseDecoder`（`lib/http/init.dart:352-358`，做 gzip/brotli 解压 + `utf8.decode`）是**同步**执行的。好消息是 `ResponseDecoder` 的类型是 `FutureOr<String> Function(...)`，`SyncTransformer.transformResponse` 会 `await` 返回值 —— 所以可以**直接返回 Future**：
+- 做法（`lib/http/init.dart`）：
+
+```dart
+static const _offloadThreshold = 32 * 1024; // 32 KB 以下不值得一次 isolate 往返
+
+static FutureOr<String> _responseDecoder(
+  List<int> responseBytes,
+  RequestOptions options,
+  ResponseBody responseBody,
+) {
+  final encoding = responseBody.headers['content-encoding']?.firstOrNull;
+  if (encoding == null || responseBytes.length < _offloadThreshold) {
+    return utf8.decode(
+      responseBytesDecoder(responseBytes, responseBody.headers),
+      allowMalformed: true,
+    );
+  }
+  return compute(_decodeInIsolate, (responseBytes, encoding));
+}
+```
+
+  - `_decodeInIsolate` 必须是**顶层或 static** 函数，内部重新构造 `GZipDecoder`/`BrotliDecoder`（不要把 static 实例捕获进 isolate）。
+- **回归重点**：`responseType: ResponseType.stream`（下载、`DownloadManager`）**不经过** `transformResponse`，不受影响；`ResponseType.bytes` 也一样。要测的是「大 JSON（评论列表、搜索结果、直播弹幕历史）」。
+- 验收：B3/B4 场景 jank 下降；网络返回大响应时 UI isolate 无 `decodeBytes` 峰值。
+
+#### N-03 / N-05 / N-04
+
+| 卡 | 做法 | 注意 |
+| --- | --- | --- |
+| N-03 | 按来源 A 的 N-03 清单逐处处理「按条 `jsonDecode`」；优先处理列表型接口（批量解析） | 与 N-02 合并后收益叠加 |
+| N-05（新） | `idleTimeout` 15 s → **120 s**（`http/init.dart` 里两处）；确认 Android 上**不做**「网络变化强制拆池」（现在只有 iOS 调 `_watchConnectivity()`），改为「网络真实变化（含 SSID/蜂窝切换）才拆池 + 500 ms 防抖」，并加 `keep-alive` 头 | 拆池太频繁会让每个请求都重新 TLS 握手（最耗电） |
+| N-04 | HTTP/2 只做 A/B：`Pref.enableHttp2` 开一场 B0/B3 对比，`h2` 的连接复用对耗电可能有利，但对单请求延迟不一定；**结论出来之前保持默认 false** | 需实测，别默认开 |
+
+---
+
+### 12.9 批次 F —— 后台长任务与更新链路（MI-11 → MI-12 → BD-04）
+
+> 这一批不改性能指标，但决定「用户能不能用上前面所有优化」——下载在澎湃 OS 上被冻结、更新装不上，是当前最影响可用性的两项。
+
+#### MI-11 下载/导出改前台服务
+
+- **现状**：`lib/services/download/download_manager.dart` 是纯 Dart 的 `dio` 流写文件，无 FGS、无通知、无 wakelock、无独立 isolate。
+- **做法**
+  1. 走本工程既有的 JNI 体系（与 MI-15 同款做法，避免引入新插件）：`AndroidHelper.java` 加 `startDownloadService(int total, String title)` / `updateDownloadService(int received, int total, boolean indeterminate)` / `stopDownloadService()`；`lib/utils/android/bindings.g.dart` **手工同步**（若用 `tool/jnigen.dart` 重新生成会得到同样结果）。
+  2. 原生侧 `DownloadForegroundService`（Kotlin 或 Java 均可，与 `MainActivity.kt` 同包）：
+     - `startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)`；
+     - 通知渠道独立（见 B-08b），通知带暂停/继续按钮（`PendingIntent` 回 MethodChannel）；
+     - 清单加 `<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />` 并声明 `<service android:foregroundServiceType="dataSync" ... />`。
+  3. **时长合规**：Android 15+ 对 `dataSync` 有「每天 6 小时」上限 → 超长任务（离线缓存大批量）改用 Android 14+ **用户发起数据传输 Job**：`JobInfo.Builder.setUserInitiated(true)` + `setRequiredNetworkType`，由系统托管进度通知。
+  4. Dart 侧：下载开始/进度/结束/失败四个时机调用上述方法；App 被杀后重新进入时按下载记录恢复（现有断点续传逻辑已支持 `range`）。
+- **验收**：锁屏 10 min，下载不中断；`adb shell dumpsys activity services com.example.piliplus` 能看到该 FGS；通知显示进度且可暂停。
+- **风险**：FGS 类型与时长合规（上架相关）；网络切换时的重试要与 `RetryInterceptor` 的退避策略一致。
+
+#### MI-12 应用内更新安装链路
+
+- **做法**
+  1. 应用内下载安装包（复用 MI-11 的 FGS + 断点续传 + 镜像回退）；下载完校验 `sha256`。
+  2. 清单加 `REQUEST_INSTALL_PACKAGES`；新建 `android/app/src/main/res/xml/file_paths.xml`，用 `androidx.core.content.FileProvider`（Flutter embedding 已传递引入 `androidx.core:core`）暴露 `content://`。
+  3. `ACTION_VIEW` + `application/vnd.android.package-archive` + **`FLAG_GRANT_READ_URI_PERMISSION`**（与 A17-05 同源原则），`AndroidHelper.openUrl()` 之外单独加一个 `installApk(String path)`。
+  4. 未授予「安装未知应用」时跳 `Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES`（`package:` URI）；澎湃 OS 还需「后台弹出界面」权限（MI-13 的引导页已覆盖入口）。
+  5. 保留「前往 GitHub Release」兜底（`lib/utils/update.dart:119-146` 现状不动，只在其前面插入应用内下载分支）。
+- **验收**：从检查更新到安装完成全链路一次通过；拒绝安装权限时给出可执行提示（不是静默失败）。
+
+#### BD-04 签名与更新检查时机
+
+- `android/key.properties` 目前不存在（release 用 debug 签名，`build.gradle.kts:44-58` 已写好读取逻辑，只缺文件）→ 本地生成 keystore 并加入 `.gitignore`，让 release 包可互升。
+- `Pref.autoUpdate` 的检查移到首帧后 + 尊重「不可见不请求」（与 PF-03 合并）+ 仅 WLAN 时下载。
+
+---
+
+### 12.10 批次 G —— 画质与渲染后端（A/B 决策，1–2 周）
+
+> 这一批的共同特点：**代码已经开关化，缺的是本机型上的实测数据**。每一张卡都必须给出「默认值应该是什么」的结论。
+
+| 卡 | A/B 设计 | 判据 |
+| --- | --- | --- |
+| PL-01 Impeller | `--android-project-arg=enableImpeller=true` vs 默认 false；场景：1080P60 播放 10 min、视频页滚动 + 弹幕 3 min、直播间 10 min | 帧时间 P50/P95、CPU 均值、温控等级到达时间；一并回归播放画面 / PiP / 投屏 / 截图导出。**收益明显也只对 Adreno + Vulkan 可用机型放行**（加机型白名单，别全局开） |
+| PL-02 `vo`/`gpu-api` | 组合矩阵收窄为 6 组：`(默认)` / `gpu-next` / `gpu-next + vulkan` × `hwdec=mediacodec` / `mediacodec-copy` | 黑屏/花屏/绿屏、HDR 表现、帧时间、GPU 占用。结论写进设置页默认值 |
+| PL-03 HDR 输出 | `target-colorspace-hint` + `hdr-compute-peak` + tone-mapping 曲线（`bt.2390` / `spline`）三档组合，在 HDR10 片源上测 | 峰值亮度、暗部细节、**窗口亮度模式下能否真正提亮**（不能则默认关闭并提示） |
+| PL-04b | `opt` 里显式 `hwdec-codecs=h264,hevc,vp9,av1` | 播放信息面板确认「哪些编码走硬件」；AV1 走硬解后再考虑默认优先 AV1 |
+| PL-11（新） | `vd-lavc-threads` 取值（默认「自动」 vs 4 / 6 / 8）；场景：4K60 软解、1080P60 硬解 | CPU 均值、功耗、掉帧。**硬解路径不该被线程数影响**，重点看软解回退时的发热曲线 |
+| PL-12（新） | 移动网络：`demuxer-readahead-secs` 降档 + 不预取下一 P；弱网（限速 1 Mbps）自动降清晰度 | 流量、卡顿次数、电量 |
+
+---
+
+### 12.11 批次 H —— 构建与发布（1–2 天）
+
+| 卡 | 做法 | 注意 |
+| --- | --- | --- |
+| BD-01 R8 | 打开 `isMinifyEnabled` + `isShrinkResources`，恢复 `proguardFiles(...)`；补 keep 规则（`media_kit`/`jni`、`flutter_inappwebview`、`audio_service`、`dio_http2_adapter`、`Catcher2`、UCrop、本工程的 `AndroidHelper` JNI 方法） | 先在 profile 上验证；R8 类合并会影响反射路径 → 重点回归 `AndroidHelper.fontFamilies()`（A17-07） |
+| BD-06（新） | 构建加 `--split-debug-info=build/symbols --obfuscate`，符号表归档（不进 APK） | 首次崩溃栈需要符号表还原；体积/启动收益通常不大，**先量后决定** |
+| A17-09 | 大屏（sw ≥ 600dp）方向策略：`Pref.horizontalScreen` 扩展为「大屏自动横向 + 不锁定方向」；校验 `MaxScreenSize.isWindowMode()` 在分屏/悬浮窗判定 | 小米 15 本机不受影响，改动需在折叠屏/模拟器（sw600dp）上验证 |
+| FT-01~FT-08 | 快捷方式动态化、通知渠道（= B-08b）、`monochrome` 图标、PiP 增强、`FLAG_SECURE`、`localeConfig`、无障碍 | 逐项独立提交；`FLAG_SECURE` 只对登录页/二维码/私密内容，**不要**在播放页全局开 |
+
+---
+
+### 12.12 统一验收矩阵
+
+| 批次 | 场景 | 指标 | 命令 | 达标线 |
+| --- | --- | --- | --- | --- |
+| A | 全链路回归 | 无崩溃/无权限异常 | `adb logcat` | 无新增异常栈 |
+| A | 16 KB 对齐 | `zipalign -c -P 16` | 见 MI-07 | 返回 0 |
+| B | B0 待机 8 h | 电流、wakeup | `dumpsys batterystats` | 电流 ↓ ≥ 30%，wakeup ↓ ≥ 40% |
+| B | B2 播放 30 min（含熄屏 10 min） | 电流、`AudioHardening` | `dumpsys audio`、`dumpsys batterystats` | 电流 ↓ ≥ 15%；`level` 不为 `partial` |
+| B | 直播断/连 | 重连次数与黑屏 | logcat | 无 mpv 实例重建 |
+| C | B3 滚动 + 弹幕 | jank、P95 帧时间 | `dumpsys gfxinfo framestats` | jank < 1%，P95 ↓ ≥ 30% |
+| C | B4 直播间 10 min | UI isolate CPU、GC | DevTools | CPU ↓ ≥ 50% |
+| C | Skia 层 | `saveLayer` 次数 | `--trace-skia` | ↓ ≥ 50% |
+| D | B1 冷启动 | `TotalTime` / 首帧 | `am start -W` | 首帧 ↓ ≥ 25%（< 1.2 s） |
+| E | 大响应接口 | 主 isolate CPU | DevTools | 无 `decodeBytes` 峰值 |
+| F | 锁屏下载 10 min | 是否中断 | `dumpsys activity services` | 不中断、有进度通知 |
+| F | 更新全链路 | 安装成功率 | 手动 | 一次通过 |
+| G | 画质 A/B | 帧时间/亮度/画面正确性 | 见 12.10 | 给出默认值结论并记录 |
+
+---
+
+### 12.13 风险登记与回滚
+
+| 风险 | 触发条件 | 影响 | 缓解 / 回滚 |
+| --- | --- | --- | --- |
+| 门控误判「可见性」 | `inactive` 被当成后台 | 播放心跳/网络被误停 | 只认 `resumed`；PiP 独立放行；先只改 4 个低风险轮询再改直播 |
+| `MediaKit` / handler 未就绪时被调用 | S-01 去 await 后出现竞态 | 首次播放无声、通知缺失 | 全部消费点改 `await ensureServiceLocator()`；回归「首帧后 1 s 内点播放」 |
+| `responseDecoder` 返回 Future 影响流式接口 | 大文件下载/导出 | 下载卡住 | 下载分支走 `ResponseType.stream`（不经 `transformResponse`），并加单测覆盖 |
+| `ThemeData` 缓存陈旧 | 切主题色/纯黑/字重 | UI 不刷新 | key 覆盖全部影响项；切换路径强制 `updateMyAppTheme()` |
+| 直播 isolate 化丢消息 | 队列溢出 / worker 卡死 | 弹幕缺失 | 队列上限 + 丢弃计数日志；3 s 无响应回落同步路径 |
+| LiquidGlass 降级 | 低功耗下关模糊 | 观感变化 | **默认关**，由用户开关决定 |
+| R8 影响反射 | 字体列表 / 图片裁剪 | 功能异常 | keep 规则；profile 构建先验证 |
+| FGS 合规 | `dataSync` 超 6 h | 系统 `RemoteServiceException` | 超长任务改 `JobInfo.setUserInitiated(true)` |
+| 高刷与门控冲突 | 视频播放中进入低功耗后又回前台 | 档位错乱、刷新率抖动 | `DisplayModeUtils` 统一收口（已有 `systemOverridden` 校验），不新增第二条改刷新率的路径 |
+
+---
+
+### 12.14 推荐排期
+
+```mermaid
+gantt
+    dateFormat YYYY-MM-DD
+    axisFormat %m-%d
+    title PiliPlus Android 17 / 小米15 增量优化排期
+    section 批次A 快赢
+    A17-04 MI-07 MI-06 MI-17 等 :a1, 2026-09-27, 1d
+    section 批次B 耗电主线
+    PF-03 可见性门控            :a2, 2026-09-28, 4d
+    业务轮询改造 B-02 B-03 B-06 B-07 :a3, after a2, 3d
+    直播与弹幕门控 L-02 L-04 D-02  :a4, after a3, 2d
+    播放侧 PL-07 PL-12 PL-09 B-08b  :a5, after a4, 3d
+    section 批次C 卡顿主线
+    L-01 直播弹幕 isolate       :b1, 2026-10-12, 2d
+    U-02 U-05 U-17              :b2, after b1, 3d
+    C4 saveLayer 与列表参数      :b3, after b2, 3d
+    D-06 U-18 视频页收口         :b4, after b3, 3d
+    section 批次D 冷启动
+    S-01 去 await 与 handler     :c1, 2026-10-26, 2d
+    S-02 S-04 S-11 I-04         :c2, after c1, 3d
+    section 批次E 网络
+    N-01 N-02 N-05              :d1, 2026-11-02, 3d
+    section 批次F 后台与更新
+    MI-11 前台服务               :e1, 2026-11-05, 3d
+    MI-12 安装链路 BD-04         :e2, after e1, 3d
+    section 批次G 画质A/B
+    PL-01 PL-02 PL-11           :f1, 2026-11-12, 3d
+    PL-03 HDR                   :f2, after f1, 3d
+    section 批次H 发布
+    BD-01 BD-06 A17-09          :g1, 2026-11-18, 2d
+```
+
+> 排期原则：**批次 B 必须先做**（收益最高、且是后续所有「不可见暂停」类改动的地基）；批次 C 与 D 可并行（不同文件域）；批次 E 依赖 C 的验证数据；F/G/H 属独立线，可以按人力并行。
+
+---
+
+### 12.15 本次新增编号对照（前文未出现）
+
+| 新编号 | 标题 | 归属章节 | 为什么值得做 |
+| --- | --- | --- | --- |
+| A17-13 | 部分照片访问（`READ_MEDIA_VISUAL_USER_SELECTED`） | 第 3 章 | Android 14+ 已支持「仅选择部分照片」，声明后可减少权限摩擦并降低越权风险 |
+| MI-17 | 持续性能模式 × 澎湃性能模式实测 | 第 4 章 | MI-15 已改代码但未验证默认值是否该常开，属「改动已落地、结论缺失」 |
+| PL-11 | 解码线程数与功耗曲线 | 第 5 章 | 8 Elite 大小核异构，线程数默认值在软解回退时明显影响发热 |
+| PL-12 | 移动网络不预取 + 弱网自动降档 | 第 5 章 | 移动网络下的流量与耗电是用户最敏感的两个体感项 |
+| D-06 | 弹幕 `TextPainter` 缓存 | 第 6.1 节 | 弹幕文本重复率极高，缓存命中率与收益成正比，改动局部且可回滚 |
+| U-18 | 液体玻璃 `BackdropFilter` 治理 | 第 6.3 节 | 新增玻璃 UI 后，模糊是 GPU 上新的常驻大项，与高刷叠加直接影响功耗 |
+| N-05 | 连接复用与网络切换策略 | 第 6.6 节 | 频繁拆池会让每个请求重新握手，是「看不见的耗电」 |
+| S-11 | 启动期原生调用时序重排 | 第 6.7 节 | `DisplayMode` / `PowerSaveWatcher` 的初始化与首帧竞争，会放大启动掉帧 |
+| BD-06 | 符号表留存与体积核算 | 第 7 章 | 与 BD-01 配套：开了混淆/R8 之后必须能还原崩溃栈 |
+
+**本部分与 1–11 章的关系**：第 1–11 章是「问题与结论」，本部分是「动作与验收」。两者编号一一对应，未在本部分出现的编号（如 I-05、I-06、S-08）属「已确认无需改动」，不要为了凑数去动。
+
+---
+
 ## 附录 A：关键文件索引
 
 | 主题 | 文件 |
@@ -915,6 +1483,7 @@ Android 在 Doze / App Standby 下对后台进程的限制比其它平台严格�
 | 投屏 | `lib/pages/dlna/view.dart`、`lib/pages/video/controller.dart`、`lib/pages/video/widgets/header_control.dart` |
 | 澎湃 OS 引导页 | `lib/pages/setting/pages/hyperos_compat.dart`、`extra_settings.dart` |
 | 网络层 | `lib/http/init.dart`、`lib/http/retry_interceptor.dart`、`lib/grpc/grpc_req.dart` |
+| 第 12 章拟新增 | `android/app/src/main/res/xml/network_security_config.xml`、`android/app/src/main/res/xml/file_paths.xml`、`lib/services/app_visibility_gate.dart`、`lib/pages/live_room/isolate/danmaku_parser.dart`、`tool/perf/`（基线采集脚本） |
 | 来源报告 | `perf-report/PiliPlus-Android.md`、`perf-report/PiliPlus-Android17-Xiaomi15.md` |
 
 ## 附录 B：参考的官方文档
@@ -926,3 +1495,5 @@ Android 在 Doze / App Standby 下对后台进程的限制比其它平台严格�
 ---
 
 *本报告由两份来源文档合并重写而成，共覆盖 103 个可改进点（A17 12 / MI 16 / PL 10 / PF 3 组 / FT 8 / BD 5 / D 5 / L 7 / U 17 / I 6 / B 9 / N 4 / S 10），所有结论均可回溯到上述 `文件:行号`。代码快照：2026-09-25。*
+
+*第 12 章（2026-09-26 新增）另补 9 个新编号（A17-13 / MI-17 / PL-11 / PL-12 / D-06 / U-18 / N-05 / S-11 / BD-06），并把全部 ⏳ 待办拆成 8 个可执行批次；编号总数由 103 增至 112。*
