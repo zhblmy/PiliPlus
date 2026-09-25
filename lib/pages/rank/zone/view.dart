@@ -1,4 +1,5 @@
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
+import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_h.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -44,6 +45,8 @@ class _ZonePageState extends State<ZonePage>
         controller: controller.scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          // 为首页的液体玻璃顶栏让出空间
+          const TopBarInsetSpacer(),
           SliverPadding(
             padding: const EdgeInsets.only(top: 7, bottom: 100),
             sliver: Obx(() => _buildBody(controller.loadingState.value)),

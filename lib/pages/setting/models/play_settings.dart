@@ -13,6 +13,7 @@ import 'package:PiliPlus/plugin/pl_player/models/fullscreen_mode.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_repeat.dart';
 import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
+import 'package:PiliPlus/utils/permission_handler.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -270,6 +271,16 @@ List<SettingsModel> get playSettings => [
         .put(SettingBoxKey.btmProgressBehavior, value.index)
         .whenComplete(setState),
   ),
+  if (Platform.isAndroid)
+    const SwitchModel(
+      title: '场景化刷新率',
+      subtitle:
+          '播放视频（内容 ≤ 45fps）时降到 60Hz 档，退出后恢复用户档位；\n'
+          '省电模式 / 低电量 / 温控降档 / 画中画时同样降到 60Hz',
+      leading: Icon(Icons.screen_lock_portrait_outlined),
+      setKey: SettingBoxKey.limitDisplayMode,
+      defaultVal: true,
+    ),
   if (PlatformUtils.isMobile)
     SwitchModel(
       title: '后台音频服务',
@@ -277,8 +288,14 @@ List<SettingsModel> get playSettings => [
       leading: const Icon(Icons.volume_up_outlined),
       setKey: SettingBoxKey.enableBackgroundPlay,
       defaultVal: true,
-      onChanged: (value) =>
-          videoPlayerServiceHandler!.enableBackgroundPlay = value,
+      onChanged: (value) async {
+        videoPlayerServiceHandler!.enableBackgroundPlay = value;
+        if (value) {
+          // MI-03：Android 13+ / 澎湃 OS 上通知权限没授予时，后台播放的媒体控制
+          // 通知与锁屏控件不会显示，用户会误以为「后台播放无效」，所以开启时申请一次
+          await Permission.notification.request();
+        }
+      },
     ),
   PopupModel(
     title: '播放顺序',

@@ -1,5 +1,6 @@
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart'
     show displacement, kIndicatorSize;
+import 'package:PiliPlus/common/widgets/liquid_glass.dart' show TopBarInset;
 import 'package:PiliPlus/common/widgets/slotted_layout_helper.dart';
 import 'package:flutter/rendering.dart' show BoxHitTestResult, ClipRectLayer;
 import 'package:material_ui/material_ui.dart' hide RefreshIndicatorStatus;
@@ -32,7 +33,26 @@ class RefreshLayout
 
   @override
   RenderRefreshLayout createRenderObject(BuildContext context) {
-    return RenderRefreshLayout(scale: scale, position: position);
+    return RenderRefreshLayout(
+      scale: scale,
+      position: position,
+      // 内容会穿过悬浮的玻璃顶栏，转圈要往下让开
+      topOffset: TopBarInset.of(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderRefreshLayout renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    final topOffset = TopBarInset.of(context);
+    if (renderObject.topOffset != topOffset) {
+      renderObject
+        ..topOffset = topOffset
+        ..markNeedsLayout();
+    }
   }
 }
 
@@ -41,6 +61,7 @@ class RenderRefreshLayout extends RenderBox
   RenderRefreshLayout({
     required this.scale,
     required this.position,
+    this.topOffset = 0.0,
   }) {
     scale.addListener(_scaleListener);
     position.addListener(_positionListener);
@@ -49,6 +70,9 @@ class RenderRefreshLayout extends RenderBox
   final Animation<double> scale;
 
   final Animation<double> position;
+
+  /// 视口顶部被悬浮的玻璃顶栏盖住时，转圈要往下让开的距离
+  double topOffset;
 
   double _heightFactor = 0;
   double get heightFactor => _heightFactor;
@@ -112,7 +136,8 @@ class RenderRefreshLayout extends RenderBox
       indicator,
       Offset(
         (constraints.maxWidth - scaleSize) / 2,
-        (kIndicatorSize + displacement) * heightFactor -
+        topOffset +
+            (kIndicatorSize + displacement) * heightFactor -
             kIndicatorSize +
             (kIndicatorSize - scaleSize) / 2,
       ),

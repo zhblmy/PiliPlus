@@ -38,14 +38,14 @@
     <application xmlns:tools="http://schemas.android.com/tools"
         android:name="${applicationName}"
         android:allowBackup="false"
-        android:enableOnBackInvokedCallback="false"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         tools:replace="android:allowBackup">
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+            android:value="${enableImpeller}" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -268,5 +268,11 @@
       -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!--
+      Android 17 (API 37) 起对 targetSdk 37 的应用强制该运行时权限：
+      访问局域网设备（投屏 / DLNA / SSDP 组播发现）必须申请，否则局域网通信
+      会被系统阻断，表现为「搜不到任何设备」。低版本声明无副作用。
+      -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 </manifest>

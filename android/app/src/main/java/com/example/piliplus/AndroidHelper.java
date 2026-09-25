@@ -24,6 +24,7 @@ import android.graphics.drawable.Icon;
 import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Rational;
@@ -65,6 +66,115 @@ public final class AndroidHelper {
 
     public static int sdkInt() {
         return Build.VERSION.SDK_INT;
+    }
+
+    /**
+     * 当前设备热状态（{@code PowerManager.THERMAL_STATUS_*}）。
+     *
+     * <p>用于低功耗降档（关超分、降刷新率、弹幕降载）：温控进入 MODERATE 及以上时
+     * 主动降载，避免系统直接降频/杀后台导致的卡顿。API 29 以下返回 0（NONE）。
+     */
+    public static int thermalStatus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return 0;
+        }
+        try {
+            Object service = getContext().getSystemService(Context.POWER_SERVICE);
+            if (service instanceof PowerManager) {
+                return ((PowerManager) service).getCurrentThermalStatus();
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
+    }
+
+    /**
+     * 跳转各类系统设置页（澎湃 OS 兼容性检查用）。失败时自动回退到应用详情页，
+     * 因此调用方不需要处理返回值。
+     *
+     * @param type autostart（自启动）| battery（电池优化白名单）| permission（权限管理，
+     *             后台弹出界面在其中）| notification（通知）| display（显示）| 其它=应用详情
+     */
+    public static void openAppSettings(@NonNull String type) {
+        Context context = getContext();
+        Uri pkgUri = Uri.parse("package:" + context.getPackageName());
+        try {
+            Intent intent;
+            switch (type) {
+                case "autostart":
+                    intent = new Intent();
+                    intent.setComponent(new ComponentName(
+                            "com.miui.securitycenter",
+                            "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                    ));
+                    break;
+                case "battery":
+                    intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkgUri);
+                    break;
+                case "permission":
+                    // MIUI/HyperOS 的“应用权限管理”页，后台弹出界面/自启动等开关在其中
+                    intent = new Intent("miui.intent.action.APP_PERM_EDITOR");
+                    intent.setClassName(
+                            "com.miui.securitycenter",
+                            "com.miui.permcenter.permissions.PermissionsEditorActivity"
+                    );
+                    intent.putExtra("extra_pkgname", context.getPackageName());
+                    break;
+                case "notification":
+                    intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                    intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.getPackageName());
+                    break;
+                case "display":
+                    intent = new Intent(Settings.ACTION_DISPLAY_SETTINGS);
+                    break;
+                default:
+                    intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkgUri);
+                    break;
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            return;
+        } catch (Exception ignored) {
+            // 小米各版本的组件名/入口会变，统一兜底到应用详情页
+        }
+        try {
+            context.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkgUri)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 是否已加入电池优化白名单。
+     *
+     * <p>用 int（1/0）而不是 boolean，与 {@link #thermalStatus()} 保持一致，
+     * 便于 Dart 侧用同一套 JNI 调用约定读取。
+     */
+    public static int isIgnoringBatteryOptimizations() {
+        try {
+            Context context = getContext();
+            Object service = context.getSystemService(Context.POWER_SERVICE);
+            if (service instanceof PowerManager) {
+                return ((PowerManager) service)
+                        .isIgnoringBatteryOptimizations(context.getPackageName()) ? 1 : 0;
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
+    }
+
+    /**
+     * 申报“持续性能模式”：长时播放 + 弹幕场景下，系统不再“先冲高频再骤降”，
+     * 帧时间更平缓（与 Dart 侧的温控降档策略配合使用）。
+     */
+    public static void setSustainedPerformanceMode(long engineId, boolean enable) {
+        try {
+            Activity activity = JniFlutterPlugin.getActivity(engineId);
+            if (activity != null) {
+                activity.getWindow().setSustainedPerformanceMode(enable);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     public static void back() {
@@ -353,6 +463,10 @@ public final class AndroidHelper {
     public static final class ToDart {
         public static volatile Runnable onUserLeaveHint;
         public static Runnable onConfigurationChanged;
+
+        /** 画中画进入/退出时回调（由 MainActivity.onPictureInPictureModeChanged 触发），
+         *  用于让 Dart 侧在 PiP 期间降载（降刷新率、关超分）。状态见 {@link #isPipMode}。 */
+        public static Runnable onPipModeChanged;
 
         private ToDart() {
         }

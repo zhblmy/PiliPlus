@@ -839,6 +839,33 @@ class HeaderControlState extends State<HeaderControl>
                       onTap: () =>
                           Utils.copyText('VideoParams\n${state.videoParams}'),
                     ),
+                    // PL-04：核实「是否真的在用硬解 / 是否走了 AV1」——
+                    // mpv 的 video-codec 会带上实际解码器，例如
+                    // "av1 (av1_mediacodec)" / "hevc (hevc_mediacodec)"
+                    ListTile(
+                      dense: true,
+                      title: const Text("VideoCodec"),
+                      subtitle: Text(player.getProperty('video-codec')),
+                      onTap: () => Utils.copyText(
+                        'video-codec\n${player.getProperty('video-codec')}',
+                      ),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text("ContainerFps"),
+                      subtitle: Text(player.getProperty('container-fps')),
+                      onTap: () => Utils.copyText(
+                        'container-fps\n${player.getProperty('container-fps')}',
+                      ),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text("EstimatedVfFps"),
+                      subtitle: Text(player.getProperty('estimated-vf-fps')),
+                      onTap: () => Utils.copyText(
+                        'estimated-vf-fps\n${player.getProperty('estimated-vf-fps')}',
+                      ),
+                    ),
                     ListTile(
                       dense: true,
                       title: const Text("AudioParams"),

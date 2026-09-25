@@ -109,7 +109,6 @@ Widget livePanelSub(
           Text(
             title,
             maxLines: isDetail ? null : 1,
-            style: const TextStyle(fontWeight: FontWeight.bold),
             overflow: isDetail ? null : TextOverflow.ellipsis,
           ),
         const SizedBox(height: 2),

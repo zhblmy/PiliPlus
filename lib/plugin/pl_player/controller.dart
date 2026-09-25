@@ -1,4 +1,4 @@
-import 'dart:async' show StreamSubscription, Timer;
+import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:convert' show ascii, utf8;
 import 'dart:io' show Platform;
 import 'dart:math' show max, min;
@@ -32,6 +32,7 @@ import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/android_helper.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
+import 'package:PiliPlus/utils/android/display_mode_utils.dart';
 import 'package:PiliPlus/utils/asset_utils.dart';
 import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
@@ -39,6 +40,7 @@ import 'package:PiliPlus/utils/extension/box_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:PiliPlus/utils/image_utils.dart';
+import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/path_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
@@ -66,7 +68,8 @@ import 'package:window_manager/window_manager.dart';
 
 typedef PlayCallback = Future<void>? Function();
 
-class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
+class PlPlayerController
+    with BlockConfigMixin, AudioNormalizationMixin, WidgetsBindingObserver {
   Player? _videoPlayerController;
   VideoController? _videoController;
 
@@ -140,6 +143,10 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   int? _pgcType;
   VideoType _videoType = VideoType.ugc;
   int _heartDuration = 0;
+
+  /// 播放心跳最小间隔（秒）：原来 5s 一次（720 次/小时）会把射频一直钉在
+  /// CONNECTED 态并持续唤醒 CPU，改为 15s 并在暂停时补发一次（性能报告 P-02）。
+  static const int _heartBeatInterval = 15;
   int? width;
   int? height;
 
@@ -365,7 +372,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   late int? cacheVideoQa = PlatformUtils.isMobile ? null : Pref.defaultVideoQa;
   late int cacheAudioQa = Pref.defaultAudioQa;
   bool enableHeart = true;
-  late final String? hwdec = Pref.enableHA ? Pref.hardwareDecoding : null;
+  late String? hwdec = Pref.enableHA ? Pref.hardwareDecoding : null;
 
   late final progressType = Pref.btmProgressBehavior;
   late final enableQuickDouble = Pref.enableQuickDouble;
@@ -482,6 +489,22 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   bool visible = true;
 
+  bool _isForeground = true;
+
+  /// App 是否处于前台。
+  ///
+  /// 只有 resumed / inactive 算前台：画中画、分屏、应用切换器都落在 inactive，
+  /// 此时用户仍在看视频；熄屏或切到后台会走到 hidden / paused。
+  bool get isForeground => _isForeground;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground = state == .resumed || state == .inactive;
+    if (foreground == _isForeground) return;
+    _isForeground = foreground;
+    _updateWakeLock();
+  }
+
   DeviceOrientation? _orientation;
   late final checkIsAutoRotate = Platform.isAndroid && mode != .gravity;
   StreamSubscription<OrientationParams>? _orientationListener;
@@ -535,6 +558,9 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
   // 添加一个私有构造函数
   PlPlayerController._() {
+    // 唤醒锁需要跟随前后台（见 _updateWakeLock），这里由控制器自己监听 lifecycle，
+    // 不依赖播放页控件——它是条件构建的，可能被卸载而漏掉 resumed 事件。
+    addObserverMobile(this);
     if (PlatformUtils.isMobile) {
       _orientationListener = NativeDeviceOrientationPlatform.instance
           .onOrientationChanged(
@@ -609,6 +635,8 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
       _processing = true;
       this.isLive = isLive;
       _videoType = videoType ?? VideoType.ugc;
+      // PL-05：换片后重新给硬解降级链机会（不同的编码可能支持硬解）
+      _hwdecFallbackCount = 0;
       this.width = width;
       this.height = height;
       this.dataSource = dataSource;
@@ -685,6 +713,24 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   late final isAnim = _pgcType == 1 || _pgcType == 4;
   late final Rx<SuperResolutionType> superResolutionType =
       (isAnim ? Pref.superResolutionType : SuperResolutionType.disable).obs;
+
+  /// 低功耗 / 画中画降载：临时清空 glsl-shaders（Anime4K 超分是移动 GPU 上最重的
+  /// 一项），**不落盘**、也不改用户的超分设置，退出场景后再 [restoreSuperResolution]。
+  Future<void> trimShadersForLowPower() async {
+    await _videoPlayerController?.command(
+      const ['change-list', 'glsl-shaders', 'clr', ''],
+    );
+  }
+
+  /// 恢复用户设置里的超分档位（只在用户确实开启了超分、且当前是番剧/影视时生效）
+  Future<void> restoreSuperResolution() {
+    if (_videoPlayerController == null ||
+        superResolutionType.value == SuperResolutionType.disable) {
+      return Future.value();
+    }
+    return setShader();
+  }
+
   Future<void> setShader([SuperResolutionType? type, NativePlayer? pp]) async {
     if (type == null) {
       type = superResolutionType.value;
@@ -733,6 +779,21 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     final autosync = Pref.autosync;
     if (autosync != '0') {
       opt['autosync'] = autosync;
+    }
+    // PL-02：Android 可选 mpv 视频输出后端（形如 vo=gpu-next,gpu-api=vulkan）。
+    // 默认空字符串 = 不设置，完全沿用 mpv 默认值，行为与改动前一致。
+    if (Platform.isAndroid) {
+      final backend = Pref.videoOutputBackend;
+      if (backend.isNotEmpty) {
+        for (final item in backend.split(',')) {
+          final index = item.indexOf('=');
+          if (index > 0) {
+            opt[item.substring(0, index).trim()] = item
+                .substring(index + 1)
+                .trim();
+          }
+        }
+      }
     }
 
     final player = await Player.create(
@@ -840,6 +901,74 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     return null;
   }
 
+  /// 硬解失败时的降级链（性能报告 PL-05）。mpv 无法热切换解码器，所以做法是：
+  /// 运行时改 `hwdec`，再重新 open 同一媒体（重新 open 会重建解码器）。
+  static const List<String> _hwdecFallbackChain = [
+    'mediacodec-copy',
+    'auto-copy',
+    'no',
+  ];
+
+  int _hwdecFallbackCount = 0;
+  bool _hwdecFallbackRunning = false;
+
+  Future<void> _tryHwdecFallback() async {
+    if (!Platform.isAndroid || !Pref.hwdecFallback) return;
+    if (_hwdecFallbackRunning || isLive) return;
+    if (_hwdecFallbackCount >= _hwdecFallbackChain.length) return;
+    final player = _videoPlayerController;
+    if (player == null) return;
+    final next = _hwdecFallbackChain[_hwdecFallbackCount++];
+    if (next == hwdec) return;
+    hwdec = next;
+    _hwdecFallbackRunning = true;
+    try {
+      player.setProperty('hwdec', next);
+      SmartDialog.showToast(
+        next == 'no' ? '解码器不受支持，已切换为软解' : '解码器不受支持，已切换为 $next',
+      );
+      await refreshPlayer();
+    } catch (_) {
+    } finally {
+      _hwdecFallbackRunning = false;
+    }
+  }
+
+  /// 当前内容帧率（mpv `container-fps`），供场景化刷新率使用（PL-02）；未知返回 null
+  double? get _containerFps {
+    if (_videoPlayerController case NativePlayer player) {
+      try {
+        final fps = double.tryParse(player.getProperty('container-fps'));
+        if (fps != null && fps > 0) return fps;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Timer? _liveReconnectTimer;
+  int _liveReconnectCount = 0;
+
+  /// 直播错误重连：同一时刻只保留一个定时器，并按 3s/6s/12s/24s 指数退避。
+  /// 原来每条 error 都排一个 3s 定时器，流抖动时会叠加出多次建连（性能报告 P-07）。
+  void _scheduleLiveReconnect() {
+    if (!isLive || _liveReconnectTimer != null) return;
+    final delay = Duration(
+      milliseconds: 3000 << _liveReconnectCount.clamp(0, 3),
+    );
+    _liveReconnectCount++;
+    _liveReconnectTimer = Timer(delay, () {
+      _liveReconnectTimer = null;
+      refreshPlayer();
+    });
+  }
+
+  /// 播放恢复正常后重置直播重连退避
+  void _resetLiveReconnect() {
+    _liveReconnectTimer?.cancel();
+    _liveReconnectTimer = null;
+    _liveReconnectCount = 0;
+  }
+
   // 开始播放
   Future<void> _initializePlayer() async {
     if (_instance == null) return;
@@ -882,6 +1011,26 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     _updatePlaybackState(debugLabel: 'onVideoPaused');
   }
 
+  /// 唤醒锁门控：只有「App 在前台 && 正在播放」时才持有 PARTIAL_WAKE_LOCK
+  /// （性能报告 P-01）。
+  ///
+  /// 熄屏/切后台时 lifecycle 会走到 hidden/paused，此时立即释放，避免屏幕熄灭
+  /// 后 CPU 仍被钉住、mpv 全速解码；后台播放交给音频链路与 audio_service 前台
+  /// 服务，不再依赖该唤醒锁。
+  ///
+  /// 这里刻意不使用 [visible]（也不使用 [isPipMode]）：
+  /// - 画中画/分屏只走到 inactive，`visible` 已是 false，但用户仍在看视频；
+  /// - `isPipMode` 由原生 onPictureInPictureModeChanged 写入，与 lifecycle 回调
+  ///   存在先后顺序问题，用它兜底会偶发「画中画时屏幕熄灭」。
+  /// 因此只按「前台 + 播放中」判断，前台含义见 [isForeground]。
+  void _updateWakeLock() {
+    if (_isForeground && playerStatus.isPlaying) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
+  }
+
   void _updatePlaybackState({Duration? position, String? debugLabel}) {
     videoPlayerServiceHandler?.onUpdateState(
       playerStatus,
@@ -904,7 +1053,14 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           playerStatus = .playing;
           _stopWakeLockTimer();
           _updatePlaybackState();
-          WakelockPlus.enable();
+          _updateWakeLock();
+          _resetLiveReconnect();
+          // MI-02：视频场景按内容帧率定档（≤ 45fps 时降到 60Hz 档，退出后恢复）
+          DisplayModeUtils.setVideoScene(true, contentFps: _containerFps);
+          // MI-15：播放期间申报持续性能模式（长时播放/弹幕帧时间更平缓）
+          if (Platform.isAndroid) {
+            PiliAndroidHelper.setSustainedPerformanceMode(true);
+          }
 
           if (_isAutoEnterPip) {
             if (_isCurrVideoPage) {
@@ -914,6 +1070,15 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
             }
           }
         } else {
+          // 暂停时补发一次心跳，避免心跳间隔拉长后丢掉最后的播放进度
+          final seconds = videoPlayerController!.state.position.inSeconds;
+          // MI-15：暂停后不再需要持续性能
+          if (Platform.isAndroid) {
+            PiliAndroidHelper.setSustainedPerformanceMode(false);
+          }
+          if (seconds != 0) {
+            makeHeartBeat(seconds, type: .status, isManual: true);
+          }
           playerStatus = .paused;
           _startWakeLockTimer();
           _disableAutoEnterPip();
@@ -923,9 +1088,11 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           element(playing ? .playing : .paused);
         }
 
-        final seconds = videoPlayerController!.state.position.inSeconds;
-        if (seconds != 0) {
-          makeHeartBeat(seconds, type: .status);
+        if (playing) {
+          final seconds = videoPlayerController!.state.position.inSeconds;
+          if (seconds != 0) {
+            makeHeartBeat(seconds, type: .status);
+          }
         }
       }),
 
@@ -992,7 +1159,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
           if (event.startsWith('tcp: ffurl_read returned ') ||
               event.startsWith("Failed to open https://") ||
               event.startsWith("Can not open external file https://")) {
-            Timer(const Duration(milliseconds: 3000), refreshPlayer);
+            _scheduleLiveReconnect();
           }
           return;
         }
@@ -1022,8 +1189,11 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
               });
             },
           );
-        } else if (event.startsWith('Could not open codec')) {
+        } else if (event.startsWith('Could not open codec') ||
+            event.startsWith('Failed to initialize a decoder')) {
           SmartDialog.showToast('无法加载解码器, $event，可能会切换至软解');
+          // PL-05：自动逐级降级（mediacodec-copy → auto-copy → 软解）
+          unawaited(_tryHwdecFallback());
         } else if (!onlyPlayAudio.value) {
           if (event.startsWith("error running") ||
               event.startsWith("Failed to open .") ||
@@ -1131,6 +1301,10 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     if (repeat) {
       await seekTo(Duration.zero, isSeek: false);
     }
+
+    // Android 17 后台音频加固：先让前台服务进入「播放中」再开始写音频，
+    // 否则后台恢复播放时音频可能被系统静默限制（见 ensureForegroundPlaying）
+    videoPlayerServiceHandler?.ensureForegroundPlaying();
 
     await _videoPlayerController?.play();
 
@@ -1481,7 +1655,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
 
     switch (type) {
       case .playing:
-        if (progress - _heartDuration >= 5) {
+        if (progress - _heartDuration >= _heartBeatInterval) {
           _heartDuration = progress;
           return send();
         }
@@ -1552,8 +1726,15 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     }
     danmakuController = null;
     _stopOrientationListener();
+    removeObserverMobile(this);
     _disableAutoEnterPip();
     setPlayCallBack(null);
+    // MI-02：离开播放页后恢复用户档位
+    DisplayModeUtils.setVideoScene(false);
+    // MI-15：退出播放页后取消持续性能申报
+    if (Platform.isAndroid) {
+      PiliAndroidHelper.setSustainedPerformanceMode(false);
+    }
     dmState.clear();
     if (showSeekPreview) {
       _clearPreview();
@@ -1584,6 +1765,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     _positionListeners.clear();
     _statusListeners.clear();
     _stopWakeLockTimer();
+    _resetLiveReconnect();
     WakelockPlus.disable();
     if (kDebugMode) {
       debugPrint('dispose player');

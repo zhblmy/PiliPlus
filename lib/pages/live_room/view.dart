@@ -115,8 +115,15 @@ class _LiveRoomPageState extends State<LiveRoomPage>
   }
 
   @override
-  Future<void> didPopNext() async {
+  void didPopNext() {
     addObserverMobile(this);
+    // playerInit / 恢复弹幕都很重，等返回转场播完再跑
+    // （转场收尾那一帧整页会首次实时绘制，别和它抢帧）
+    runAfterRouteAnimation(_resumeOnPopNext);
+    super.didPopNext();
+  }
+
+  Future<void> _resumeOnPopNext() async {
     if (!plPlayerController.isLive) {
       plPlayerController.isLive = true;
       _liveRoomController.isLoaded.refresh();
@@ -141,7 +148,6 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     }
     if (!mounted) return;
     plPlayerController.addStatusLister(playerListener);
-    super.didPopNext();
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/utils/android/display_mode_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:collection/collection.dart';
@@ -27,7 +28,15 @@ class _SetDisplayModeState extends State<SetDisplayMode> {
   @override
   void initState() {
     super.initState();
+    // MI-02：本页选择期间暂停场景降档，否则会把「降档后的档位」误记成用户档位
+    DisplayModeUtils.suspendForUserPick(true);
     init();
+  }
+
+  @override
+  void dispose() {
+    DisplayModeUtils.suspendForUserPick(false);
+    super.dispose();
   }
 
   // 获取所有的mode
@@ -55,6 +64,9 @@ class _SetDisplayModeState extends State<SetDisplayMode> {
 
     preferred ??= DisplayMode.auto;
 
+    // MI-02：同步「用户档位」，之后场景降档都会退回到这个档位
+    DisplayModeUtils.setUserMode(preferred);
+
     FlutterDisplayMode.setPreferredMode(preferred!).whenComplete(() {
       Timer(const Duration(milliseconds: 100), fetchAll);
     });
@@ -79,6 +91,7 @@ class _SetDisplayModeState extends State<SetDisplayMode> {
           Expanded(
             child: RadioGroup(
               onChanged: (newMode) {
+                DisplayModeUtils.setUserMode(newMode);
                 FlutterDisplayMode.setPreferredMode(newMode!).whenComplete(
                   () => Timer(const Duration(milliseconds: 100), fetchAll),
                 );

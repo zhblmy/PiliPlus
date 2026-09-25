@@ -212,10 +212,7 @@ class _FontSettingPageState extends State<FontSettingPage> {
                       onTap: scrollController.jumpToTop,
                       child: Row(
                         children: [
-                          const Text(
-                            '字体：',
-                            style: TextStyle(fontWeight: .bold, fontSize: 15),
-                          ),
+                          const Text('字体：', style: TextStyle(fontSize: 15)),
                           Expanded(
                             child: Text(
                               _appFont.isCustom
@@ -307,7 +304,7 @@ class _FontSettingPageState extends State<FontSettingPage> {
                   _buildItem(
                     Row(
                       children: [
-                        const Text('字重：', style: TextStyle(fontWeight: .bold)),
+                        const Text('字重：'),
                         const SizedBox(
                           width: 40,
                           child: Text(
@@ -345,7 +342,7 @@ class _FontSettingPageState extends State<FontSettingPage> {
                   _buildItem(
                     Row(
                       children: [
-                        const Text('字号：', style: TextStyle(fontWeight: .bold)),
+                        const Text('字号：'),
                         const SizedBox(
                           width: 40,
                           child: Text('小', style: TextStyle(fontSize: 11.9)),

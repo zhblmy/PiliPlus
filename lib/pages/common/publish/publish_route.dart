@@ -12,9 +12,7 @@ class PublishRoute<T> extends PopupRoute<T> {
     super.settings,
   }) : transitionDuration =
            transitionDuration ??
-           (PlatformUtils.isDesktop
-               ? const Duration(milliseconds: 400)
-               : const Duration(milliseconds: 500));
+           (PlatformUtils.isDesktop ? Durations.medium4 : Durations.long2);
 
   final RoutePageBuilder pageBuilder;
 

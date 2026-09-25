@@ -29,6 +29,20 @@ class MpvConvertWebp {
   final RxDouble? progress;
   final WebpPreset preset;
 
+  /// 转码（导出 WebP）只支持 copy 模式的硬解：去掉 `no` 后追加 `auto-copy` 兜底。
+  ///
+  /// 原实现是直接拼接 `'${Pref.hardwareDecoding},auto-copy'`，用户在设置里选
+  /// 「启用软解」(no) 时会得到 `no,auto-copy` —— mpv 会因为 `no` 而完全关闭硬解。
+  static String get _transcodeHwdec {
+    final items = Pref.hardwareDecoding
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty && e != 'no')
+        .toList();
+    if (items.isEmpty) return 'auto-copy';
+    return '${items.join(',')},auto-copy';
+  }
+
   MpvConvertWebp(
     this.url,
     this.outFile,
@@ -53,7 +67,9 @@ class MpvConvertWebp {
         'ofopts': 'loop=0',
         'ovcopts': 'preset=${preset.flag}',
         if (enableHA) 'vo': 'gpu',
-        if (enableHA) 'hwdec': '${Pref.hardwareDecoding},auto-copy', // transcode only support copy
+        if (enableHA)
+          // 转码只支持 copy 模式（性能报告 PL-05 附带修复）
+          'hwdec': _transcodeHwdec,
       },
     );
     _mpv.mpv_request_event(

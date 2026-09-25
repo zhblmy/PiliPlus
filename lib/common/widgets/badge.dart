@@ -17,7 +17,14 @@ class PBadge extends StatelessWidget {
   final PBadgeSize size;
 
   final double fontSize;
+
+  /// 徽章文字是否加粗。
+  ///
+  /// 默认**不加粗**：字重交给主题（`Pref.appFontWeight`）/ Material 排版，
+  /// 避免 11px 的小徽章再叠一层 w700、比周围文字“重一档”。
+  /// 需要加粗的调用处显式传 `isBold: true`。
   final bool isBold;
+
   final double? textScaleFactor;
 
   const PBadge({
@@ -31,7 +38,7 @@ class PBadge extends StatelessWidget {
     this.size = PBadgeSize.medium,
     this.isStack = true,
     this.fontSize = 11,
-    this.isBold = true,
+    this.isBold = false,
     this.textScaleFactor,
     this.padding,
   });

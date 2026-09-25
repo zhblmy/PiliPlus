@@ -30,5 +30,7 @@ class MainActivity : AudioServiceActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration?) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         AndroidHelper.isPipMode = isInPictureInPictureMode
+        // 通知 Dart 侧：PiP 期间需要降载（降刷新率、关超分），退出后还原
+        AndroidHelper.ToDart.onPipModeChanged?.run()
     }
 }

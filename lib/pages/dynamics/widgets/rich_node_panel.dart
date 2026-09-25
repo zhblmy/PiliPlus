@@ -47,18 +47,14 @@ TextSpan? richNode(
       // 动态页面 richTextNodes 层级可能与主页动态层级不同
       richTextNodes = summary?.richTextNodes;
       if (title != null && title.isNotEmpty) {
+        // 注意：这里和正文同字号、同颜色、同一段落，完全去掉字重后就分不出标题了，
+        // 所以不用 w700，只需要 M3 title 档的 w500（与 body 的 w400 只差半档）。
+        // 变量名不能叫 style：外层已有一个 style（正文链接色）。
+        const titleStyle = TextStyle(fontWeight: FontWeight.w500);
         if (richTextNodes == null || richTextNodes.isEmpty) {
-          return TextSpan(
-            text: title,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          );
+          return TextSpan(text: title, style: titleStyle);
         } else {
-          spanChildren.add(
-            TextSpan(
-              text: '$title\n',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          );
+          spanChildren.add(TextSpan(text: '$title\n', style: titleStyle));
         }
       }
     }

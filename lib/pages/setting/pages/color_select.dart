@@ -50,7 +50,9 @@ class _ColorSelectPageState extends State<ColorSelectPage> {
 
   Future<void> _onChanged([bool? val]) async {
     val ??= !ctr.dynamicColor.value;
-    if (val && !await MyApp.initPlatformState()) {
+    // force：调色板是缓存的，关掉动态取色期间换了壁纸的话，
+    // 这里必须重新取一次，否则重新打开的会是旧颜色（要切后台再回来才刷新）
+    if (val && !await MyApp.initPlatformState(force: true)) {
       SmartDialog.showToast('设备可能不支持动态取色');
       if (kReleaseMode) {
         return;

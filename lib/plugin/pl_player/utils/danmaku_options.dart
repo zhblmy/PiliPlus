@@ -1,3 +1,4 @@
+import 'package:PiliPlus/utils/device_state.dart';
 import 'package:PiliPlus/utils/extension/box_ext.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -30,14 +31,15 @@ abstract final class DanmakuOptions {
     return DanmakuOption(
       fontSize: 15 * (notFullscreen ? danmakuFontScale : danmakuFontScaleFS),
       fontWeight: danmakuFontWeight,
-      area: danmakuShowArea,
+      // 低功耗降档（MI-04）：显示区域缩小、去掉描边，降低每帧文本绘制量
+      area: danmakuShowArea * DeviceState.danmakuAreaScale,
       duration: danmakuDuration / speed,
       staticDuration: danmakuStaticDuration / speed,
       hideBottom: blockTypes.contains(4),
       hideScroll: blockTypes.contains(2),
       hideTop: blockTypes.contains(5),
       hideSpecial: blockTypes.contains(7),
-      strokeWidth: danmakuStrokeWidth,
+      strokeWidth: DeviceState.trimDanmakuStroke ? 0 : danmakuStrokeWidth,
       scrollFixedVelocity: danmakuFixedV,
       massiveMode: danmakuMassiveMode,
       static2Scroll: danmakuStatic2Scroll,

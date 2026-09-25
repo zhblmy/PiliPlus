@@ -26,6 +26,7 @@ import 'package:PiliPlus/pages/common/slide/common_slide_page.dart';
 import 'package:PiliPlus/pages/home/controller.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/setting/models/model.dart';
+import 'package:PiliPlus/pages/setting/pages/hyperos_compat.dart';
 import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/pages/video/reply/widgets/reply_item_grpc.dart';
@@ -55,6 +56,13 @@ import 'package:material_design_icons_flutter/material_design_icons_flutter.dart
 import 'package:material_ui/material_ui.dart' hide RefreshIndicator;
 
 List<SettingsModel> get extraSettings => [
+  if (Platform.isAndroid)
+    NormalModel(
+      onTap: (context, setState) => Get.to(() => const HyperOsCompatPage()),
+      leading: const Icon(Icons.tune),
+      title: '澎湃 OS 兼容性检查',
+      subtitle: '自启动 / 省电策略 / 后台弹出界面 / 通知：后台播放与更新安装的前置条件',
+    ),
   if (PlatformUtils.isDesktop) ...[
     SwitchModel(
       title: '退出时最小化',

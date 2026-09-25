@@ -2,15 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:material_ui/material_ui.dart';
 
 const double _kMaxLabelTextScaleFactor = 1.3;
 
-const _kNavigationHeight = 64.0;
+/// 悬浮底栏整体尺寸
+const _kNavigationHeight = 55.0;
 const _kIndicatorHeight = _kNavigationHeight - 2 * _kIndicatorPaddingInt;
-const _kIndicatorWidth = 86.0;
+/// 每一格的宽度（同时也是选中气泡的宽度；整条宽 = 格数 × 该值）
+const _kIndicatorWidth = 90.0;
 const _kIndicatorPaddingInt = 4.0;
+const _kBlurSigma = 14.0;
 const _kIndicatorPadding = EdgeInsets.all(_kIndicatorPaddingInt);
 const _kBorderRadius = BorderRadius.all(.circular(_kNavigationHeight / 2));
 const _kNavigationShape = RoundedSuperellipseBorder(
@@ -18,7 +22,7 @@ const _kNavigationShape = RoundedSuperellipseBorder(
 );
 
 /// ref [NavigationBar]
-class FloatingNavigationBar extends StatelessWidget {
+class FloatingNavigationBar extends StatefulWidget {
   // ignore: prefer_const_constructors_in_immutables
   FloatingNavigationBar({
     super.key,
@@ -56,9 +60,51 @@ class FloatingNavigationBar extends StatelessWidget {
   final EdgeInsetsGeometry? labelPadding;
   final double bottomPadding;
 
+  @override
+  State<FloatingNavigationBar> createState() => _FloatingNavigationBarState();
+}
+
+class _FloatingNavigationBarState extends State<FloatingNavigationBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.animationDuration,
+  );
+
+  /// 气泡滑动的起点 / 终点（单位：第几格）；动画途中再次切换时从当前位置续接
+  late double _from = widget.selectedIndex.toDouble();
+  late double _to = _from;
+
+  /// 气泡当前所在的格（带小数 = 正在滑动）
+  double get _position =>
+      _from +
+      (_to - _from) *
+          Curves.easeInOutCubicEmphasized.transform(_controller.value);
+
+  @override
+  void didUpdateWidget(covariant FloatingNavigationBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animationDuration != widget.animationDuration) {
+      _controller.duration = widget.animationDuration;
+    }
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      _from = _position;
+      _to = widget.selectedIndex.toDouble();
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   VoidCallback _handleTap(int index) {
-    return onDestinationSelected != null
-        ? () => onDestinationSelected!(index)
+    return widget.onDestinationSelected != null
+        ? () => widget.onDestinationSelected!(index)
         : () {};
   }
 
@@ -68,66 +114,107 @@ class FloatingNavigationBar extends StatelessWidget {
 
     final navigationBarTheme = NavigationBarTheme.of(context);
     final effectiveLabelBehavior =
-        labelBehavior ??
+        widget.labelBehavior ??
         navigationBarTheme.labelBehavior ??
         defaults.labelBehavior!;
 
     final padding = MediaQuery.viewPaddingOf(context);
+
+    // 玻璃内可用宽度（去掉左右 padding）再平分到每一格
+    final int count = widget.destinations.length;
+    final double cellWidth =
+        (count * _kIndicatorWidth - 2 * _kIndicatorPaddingInt) / count;
+    final Color bubbleColor =
+        widget.indicatorColor ??
+        navigationBarTheme.indicatorColor ??
+        defaults.indicatorColor!;
 
     return Padding(
       padding: .fromLTRB(
         padding.left,
         0,
         padding.right,
-        bottomPadding + padding.bottom,
+        widget.bottomPadding + padding.bottom,
       ),
       child: SizedBox(
         height: _kNavigationHeight,
-        width: destinations.length * _kIndicatorWidth,
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            color: ElevationOverlay.applySurfaceTint(
-              backgroundColor ??
-                  navigationBarTheme.backgroundColor ??
-                  defaults.backgroundColor!,
-              surfaceTintColor ??
-                  navigationBarTheme.surfaceTintColor ??
-                  defaults.surfaceTintColor,
-              elevation ?? navigationBarTheme.elevation ?? defaults.elevation!,
-            ),
-            shape: RoundedSuperellipseBorder(
-              side: defaults.borderSide,
-              borderRadius: _kBorderRadius,
-            ),
+        width: count * _kIndicatorWidth,
+        child: LiquidGlass(
+          shape: _kNavigationShape,
+          blur: _kBlurSigma,
+          // 半透明着色：下面的内容会被高斯模糊后透出来
+          color:
+              (widget.backgroundColor ??
+                      navigationBarTheme.backgroundColor ??
+                      defaults.backgroundColor!)
+                  .withValues(alpha: defaults.isDark ? 0.55 : 0.62),
+          highlightColor: Colors.white.withValues(
+            alpha: defaults.isDark ? 0.14 : 0.5,
+          ),
+          shadowColor: Colors.black.withValues(
+            alpha: defaults.isDark ? 0.4 : 0.14,
           ),
           child: Padding(
             padding: _kIndicatorPadding,
-            child: Row(
-              crossAxisAlignment: .stretch,
-              children: <Widget>[
-                for (int i = 0; i < destinations.length; i++)
-                  Expanded(
-                    child: _SelectableAnimatedBuilder(
-                      duration: animationDuration,
-                      isSelected: i == selectedIndex,
-                      builder: (context, animation) {
-                        return _NavigationDestinationInfo(
-                          index: i,
-                          selectedIndex: selectedIndex,
-                          totalNumberOfDestinations: destinations.length,
-                          selectedAnimation: animation,
-                          labelBehavior: effectiveLabelBehavior,
-                          indicatorColor: indicatorColor,
-                          indicatorShape: indicatorShape,
-                          overlayColor: overlayColor,
-                          onTap: _handleTap(i),
-                          labelTextStyle: labelTextStyle,
-                          labelPadding: labelPadding,
-                          child: destinations[i],
-                        );
-                      },
+            child: Stack(
+              // 气泡宽度 == 格子宽度时会比格子略宽一点点（沿用原实现的取值），
+              // 不裁剪才不会在第一/最后一格边缘切出一小块平面
+              clipBehavior: Clip.none,
+              children: [
+                // 选中气泡只画一个，跟着选中项横向滑动
+                // （用 Transform 平移，不会触发重新布局；放在格子下面）
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: _kIndicatorWidth,
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) => Transform.translate(
+                      offset: Offset(
+                        cellWidth * _position +
+                            (cellWidth - _kIndicatorWidth) / 2,
+                        0,
+                      ),
+                      child: child,
+                    ),
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: _kNavigationShape,
+                        color: bubbleColor,
+                      ),
+                      child: const SizedBox.expand(),
                     ),
                   ),
+                ),
+                Row(
+                  crossAxisAlignment: .stretch,
+                  children: <Widget>[
+                    for (int i = 0; i < count; i++)
+                      Expanded(
+                        child: _SelectableAnimatedBuilder(
+                          duration: widget.animationDuration,
+                          isSelected: i == widget.selectedIndex,
+                          builder: (context, animation) {
+                            return _NavigationDestinationInfo(
+                              index: i,
+                              selectedIndex: widget.selectedIndex,
+                              totalNumberOfDestinations: count,
+                              selectedAnimation: animation,
+                              labelBehavior: effectiveLabelBehavior,
+                              indicatorColor: widget.indicatorColor,
+                              indicatorShape: widget.indicatorShape,
+                              overlayColor: widget.overlayColor,
+                              onTap: _handleTap(i),
+                              labelTextStyle: widget.labelTextStyle,
+                              labelPadding: widget.labelPadding,
+                              child: widget.destinations[i],
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -168,83 +255,72 @@ class FloatingNavigationDestination extends StatelessWidget {
     final defaults = _NavigationBarDefaultsM3(context);
     final animation = info.selectedAnimation;
 
-    return Stack(
-      alignment: .center,
-      clipBehavior: .none,
-      children: [
-        NavigationIndicator(
+    // 选中气泡现在由 FloatingNavigationBar 统一画（单个气泡跟随滑动），
+    // 这里只负责图标 / 文字
+    return _NavigationDestinationBuilder(
+      label: label,
+      tooltip: tooltip,
+      enabled: enabled,
+      buildIcon: (context) {
+        final IconThemeData selectedIconTheme =
+            navigationBarTheme.iconTheme?.resolve(selectedState) ??
+            defaults.iconTheme!.resolve(selectedState)!;
+        final IconThemeData unselectedIconTheme =
+            navigationBarTheme.iconTheme?.resolve(unselectedState) ??
+            defaults.iconTheme!.resolve(unselectedState)!;
+        final IconThemeData disabledIconTheme =
+            navigationBarTheme.iconTheme?.resolve(disabledState) ??
+            defaults.iconTheme!.resolve(disabledState)!;
+
+        final Widget selectedIconWidget = IconTheme.merge(
+          data: enabled ? selectedIconTheme : disabledIconTheme,
+          child: selectedIcon ?? icon,
+        );
+        final Widget unselectedIconWidget = IconTheme.merge(
+          data: enabled ? unselectedIconTheme : disabledIconTheme,
+          child: icon,
+        );
+        return _StatusTransitionWidgetBuilder(
           animation: animation,
-          color:
-              info.indicatorColor ??
-              navigationBarTheme.indicatorColor ??
-              defaults.indicatorColor!,
-        ),
-        _NavigationDestinationBuilder(
-          label: label,
-          tooltip: tooltip,
-          enabled: enabled,
-          buildIcon: (context) {
-            final IconThemeData selectedIconTheme =
-                navigationBarTheme.iconTheme?.resolve(selectedState) ??
-                defaults.iconTheme!.resolve(selectedState)!;
-            final IconThemeData unselectedIconTheme =
-                navigationBarTheme.iconTheme?.resolve(unselectedState) ??
-                defaults.iconTheme!.resolve(unselectedState)!;
-            final IconThemeData disabledIconTheme =
-                navigationBarTheme.iconTheme?.resolve(disabledState) ??
-                defaults.iconTheme!.resolve(disabledState)!;
-
-            final Widget selectedIconWidget = IconTheme.merge(
-              data: enabled ? selectedIconTheme : disabledIconTheme,
-              child: selectedIcon ?? icon,
-            );
-            final Widget unselectedIconWidget = IconTheme.merge(
-              data: enabled ? unselectedIconTheme : disabledIconTheme,
-              child: icon,
-            );
-            return _StatusTransitionWidgetBuilder(
-              animation: animation,
-              builder: (context, child) {
-                return animation.isForwardOrCompleted
-                    ? selectedIconWidget
-                    : unselectedIconWidget;
-              },
-            );
+          builder: (context, child) {
+            return animation.isForwardOrCompleted
+                ? selectedIconWidget
+                : unselectedIconWidget;
           },
-          buildLabel: (context) {
-            final TextStyle? effectiveSelectedLabelTextStyle =
-                info.labelTextStyle?.resolve(selectedState) ??
-                navigationBarTheme.labelTextStyle?.resolve(selectedState) ??
-                defaults.labelTextStyle!.resolve(selectedState);
-            final TextStyle? effectiveUnselectedLabelTextStyle =
-                info.labelTextStyle?.resolve(unselectedState) ??
-                navigationBarTheme.labelTextStyle?.resolve(unselectedState) ??
-                defaults.labelTextStyle!.resolve(unselectedState);
-            final TextStyle? effectiveDisabledLabelTextStyle =
-                info.labelTextStyle?.resolve(disabledState) ??
-                navigationBarTheme.labelTextStyle?.resolve(disabledState) ??
-                defaults.labelTextStyle!.resolve(disabledState);
-            final EdgeInsetsGeometry labelPadding =
-                info.labelPadding ??
-                navigationBarTheme.labelPadding ??
-                defaults.labelPadding!;
+        );
+      },
+      buildLabel: (context) {
+        final TextStyle? effectiveSelectedLabelTextStyle =
+            info.labelTextStyle?.resolve(selectedState) ??
+            navigationBarTheme.labelTextStyle?.resolve(selectedState) ??
+            defaults.labelTextStyle!.resolve(selectedState);
+        final TextStyle? effectiveUnselectedLabelTextStyle =
+            info.labelTextStyle?.resolve(unselectedState) ??
+            navigationBarTheme.labelTextStyle?.resolve(unselectedState) ??
+            defaults.labelTextStyle!.resolve(unselectedState);
+        final TextStyle? effectiveDisabledLabelTextStyle =
+            info.labelTextStyle?.resolve(disabledState) ??
+            navigationBarTheme.labelTextStyle?.resolve(disabledState) ??
+            defaults.labelTextStyle!.resolve(disabledState);
+        final EdgeInsetsGeometry labelPadding =
+            info.labelPadding ??
+            navigationBarTheme.labelPadding ??
+            defaults.labelPadding!;
 
-            final textStyle = enabled
-                ? animation.isForwardOrCompleted
-                      ? effectiveSelectedLabelTextStyle
-                      : effectiveUnselectedLabelTextStyle
-                : effectiveDisabledLabelTextStyle;
+        final textStyle = enabled
+            ? animation.isForwardOrCompleted
+                  ? effectiveSelectedLabelTextStyle
+                  : effectiveUnselectedLabelTextStyle
+            : effectiveDisabledLabelTextStyle;
 
-            return Padding(
-              padding: labelPadding,
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: _kMaxLabelTextScaleFactor,
-                child: Text(label, style: textStyle),
-              ),
-            );
-          },
-        ),
-      ],
+        return Padding(
+          padding: labelPadding,
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: _kMaxLabelTextScaleFactor,
+            child: Text(label, style: textStyle),
+          ),
+        );
+      },
     );
   }
 }
@@ -720,6 +796,8 @@ class _NavigationBarDefaultsM3 extends NavigationBarThemeData {
   late final _colors = Theme.of(context).colorScheme;
   late final _textTheme = Theme.of(context).textTheme;
 
+  bool get isDark => _colors.isDark;
+
   BorderSide get borderSide => _colors.isDark
       ? const BorderSide(color: Color(0x08FFFFFF))
       : const BorderSide(color: Color(0x08000000));
@@ -737,7 +815,7 @@ class _NavigationBarDefaultsM3 extends NavigationBarThemeData {
   WidgetStateProperty<IconThemeData?>? get iconTheme {
     return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       return IconThemeData(
-        size: 24.0,
+        size: 20.0,
         color: states.contains(WidgetState.disabled)
             ? _colors.onSurfaceVariant.withValues(alpha: 0.38)
             : states.contains(WidgetState.selected)

@@ -33,6 +33,11 @@ android {
         targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Impeller 渲染后端开关（性能报告 PL-01）。
+        // 默认保持“关闭”（历史兼容性考虑），需要 A/B 实测时用：
+        //   flutter build apk --android-project-arg=enableImpeller=true
+        manifestPlaceholders["enableImpeller"] =
+            (project.findProperty("enableImpeller") as String?) ?: "false"
     }
 
     packagingOptions.jniLibs.useLegacyPackaging = true

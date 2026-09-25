@@ -171,13 +171,55 @@ List<SettingsModel> get videoSettings => [
     getSubtitle: () => '当前：${Pref.videoSync}（此项即mpv的--video-sync）',
     onTap: _showVideoSyncDialog,
   ),
+  if (Platform.isAndroid)
+    NormalModel(
+      title: '视频输出后端',
+      leading: const Icon(Icons.videocam_outlined),
+      getSubtitle: () =>
+          '当前：${Pref.videoOutputBackend.isEmpty ? '默认（不设置）' : Pref.videoOutputBackend}'
+          '。即mpv的--vo / --gpu-api，需重新打开视频生效',
+      onTap: _showVideoOutputBackendDialog,
+    ),
   NormalModel(
     title: '硬解模式',
     leading: const Icon(Icons.memory_outlined),
     getSubtitle: () => '当前：${Pref.hardwareDecoding}（此项即mpv的--hwdec）',
     onTap: _showHwDecDialog,
   ),
+  if (Platform.isAndroid)
+    const SwitchModel(
+      title: '硬解失败自动降级',
+      subtitle: '解码器不兼容时依次回退：mediacodec-copy → auto-copy → 软解',
+      leading: Icon(Icons.auto_fix_high_outlined),
+      setKey: SettingBoxKey.hwdecFallback,
+      defaultVal: true,
+    ),
 ];
+
+/// PL-02：Android 可选 mpv 视频输出后端。默认「不设置」= 完全用 mpv 默认值。
+Future<void> _showVideoOutputBackendDialog(
+  BuildContext context,
+  VoidCallback setState,
+) async {
+  final res = await showDialog<String>(
+    context: context,
+    builder: (context) => SelectDialog<String>(
+      title: '视频输出后端',
+      value: Pref.videoOutputBackend,
+      values: const [
+        ('', '默认（不设置，跟随 mpv）'),
+        ('vo=gpu-next', 'vo=gpu-next（新版渲染器）'),
+        ('vo=gpu-next,gpu-api=vulkan', 'vo=gpu-next + Vulkan'),
+        ('vo=gpu', 'vo=gpu（旧版渲染器）'),
+        ('gpu-api=opengles', 'gpu-api=opengles'),
+      ],
+    ),
+  );
+  if (res != null) {
+    await GStorage.setting.put(SettingBoxKey.videoOutputBackend, res);
+    setState();
+  }
+}
 
 Future<void> _showCDNDialog(BuildContext context, VoidCallback setState) async {
   final res = await showDialog<CDNService>(

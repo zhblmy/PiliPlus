@@ -21,7 +21,7 @@ void imageSaveDialog({
 }) {
   Get.key.currentState!.push(
     PublishRoute(
-      transitionDuration: const Duration(milliseconds: 200),
+      transitionDuration: Durations.short4,
       pageBuilder: (context, animation, secondaryAnimation) {
         final colorScheme = ColorScheme.of(context);
         final imgWidth = MediaQuery.sizeOf(context).shortestSide - 16;

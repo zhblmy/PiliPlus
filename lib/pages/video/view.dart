@@ -404,6 +404,13 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
 
     addObserverMobile(this);
 
+    // 恢复播放 / 亮度 / 定时器都是重活，等返回转场播完再跑：
+    // 转场收尾那一帧整页会首次实时绘制（快照被丢弃），别和它抢帧。
+    // 观察者注册保持同步，避免这 300ms 内漏掉生命周期/旋转事件。
+    runAfterRouteAnimation(_resumeOnPopNext);
+  }
+
+  void _resumeOnPopNext() {
     plPlayerController?.isLive = false;
     if (videoDetailController.plPlayerController.playerStatus.isPlaying &&
         videoDetailController.playerStatus != PlayerStatus.playing) {

@@ -484,7 +484,7 @@ abstract final class PageUtils {
             ),
           );
         },
-        transitionDuration: const Duration(milliseconds: 350),
+        transitionDuration: Durations.medium2,
         transitionBuilder: (context, animation, secondaryAnimation, child) {
           final begin = context.isPortrait
               ? const Offset(0.0, 1.0)
@@ -494,7 +494,7 @@ abstract final class PageUtils {
               Tween<Offset>(
                 begin: begin,
                 end: Offset.zero,
-              ).chain(CurveTween(curve: Curves.easeInOut)),
+              ).chain(CurveTween(curve: Easing.emphasizedDecelerate)),
             ),
             child: child,
           );

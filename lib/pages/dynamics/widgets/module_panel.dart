@@ -279,7 +279,6 @@ Widget module(
                     major!.medialist!.title!,
                     style: TextStyle(
                       fontSize: theme.textTheme.titleMedium!.fontSize,
-                      fontWeight: FontWeight.bold,
                     ),
                   ),
                   if (major.medialist?.subTitle != null) ...[

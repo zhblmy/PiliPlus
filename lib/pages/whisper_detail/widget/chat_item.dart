@@ -224,7 +224,6 @@ class ChatItem extends StatelessWidget {
                 letterSpacing: 0.6,
                 height: 1.5,
                 color: textColor,
-                fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 1),
@@ -275,7 +274,6 @@ class ChatItem extends StatelessWidget {
               letterSpacing: 0.6,
               height: 1.5,
               color: textColor,
-              fontWeight: FontWeight.bold,
             ),
           ),
           if (content['summary'] != null && content['summary'] != '') ...[
@@ -316,7 +314,6 @@ class ChatItem extends StatelessWidget {
                 letterSpacing: 0.6,
                 height: 1.5,
                 color: textColor,
-                fontWeight: FontWeight.bold,
               ),
             ),
             for (final i in content['sub_cards'])
@@ -370,7 +367,6 @@ class ChatItem extends StatelessWidget {
                               letterSpacing: 0.6,
                               height: 1.5,
                               color: textColor,
-                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
@@ -474,7 +470,6 @@ class ChatItem extends StatelessWidget {
                         letterSpacing: 0.6,
                         height: 1.5,
                         color: textColor,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
@@ -589,7 +584,6 @@ class ChatItem extends StatelessWidget {
               letterSpacing: 0.6,
               height: 1.5,
               color: textColor,
-              fontWeight: FontWeight.bold,
             ),
           ),
           if (content['source'] == 6 &&
@@ -601,7 +595,6 @@ class ChatItem extends StatelessWidget {
                 letterSpacing: 0.6,
                 height: 1.5,
                 color: textColor,
-                fontWeight: FontWeight.bold,
               ),
             ),
           ],
@@ -759,12 +752,7 @@ class ChatItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              content['title'],
-              style: theme.textTheme.titleMedium!.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            Text(content['title'], style: theme.textTheme.titleMedium),
             Divider(color: theme.colorScheme.primary.withValues(alpha: 0.05)),
             if ((content['text'] as String?)?.isNotEmpty == true)
               Text(content['text']),
@@ -834,7 +822,6 @@ class ChatItem extends StatelessWidget {
         letterSpacing: 0.6,
         height: 1.5,
         color: textColor,
-        fontWeight: FontWeight.bold,
       ),
     );
   }

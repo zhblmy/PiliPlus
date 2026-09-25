@@ -70,6 +70,32 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
         Future.syncValue(null);
   }
 
+  /// Android 17 起音频框架会对「后台音频交互」加固：应用在后台时必须运行具备
+  /// 使用时（WIU）能力的前台服务，否则音频播放 / 音量 API 会**静默**失效
+  /// （不抛异常、也没有错误码可查），音频焦点请求则直接返回
+  /// AUDIOFOCUS_REQUEST_FAILED。
+  ///
+  /// 本工程原本的时序是「mpv 先开始写音频 → playing 回调 → 才把状态推给
+  /// audio_service」，也就是前台服务总在音频之后才进入前台。这里在真正 play 之前
+  /// 先声明一次「正在播放」，让前台服务先到位（官方推荐的缓解做法：在用户触发播放
+  /// 时就启动/进入前台服务），避免后台恢复播放被系统限制成「通知在播、实际无声」。
+  ///
+  /// 只在 Android 生效，其它平台行为不变。
+  ///
+  /// 这里只是「先把前台服务推起来」，完整的播放状态（进度、控制按钮、直播标记）
+  /// 会在紧随其后的 onUpdateState 里补齐，因此对通知栏只是一次极短暂的过渡态。
+  void ensureForegroundPlaying() {
+    if (!Platform.isAndroid) return;
+    if (!enableBackgroundPlay || _item.isEmpty) return;
+    final state = playbackState.value;
+    if (state.playing && state.processingState != .idle) {
+      return;
+    }
+    playbackState.add(
+      state.copyWith(processingState: .buffering, playing: true),
+    );
+  }
+
   void setMediaItem(MediaItem newMediaItem) {
     if (!enableBackgroundPlay) return;
     // if (kDebugMode) {

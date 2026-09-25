@@ -14,15 +14,19 @@ import 'package:PiliPlus/router/app_pages.dart';
 import 'package:PiliPlus/services/account_service.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
 import 'package:PiliPlus/services/logger.dart';
+import 'package:PiliPlus/services/power_save_watcher.dart';
 import 'package:PiliPlus/services/service_locator.dart';
+import 'package:PiliPlus/utils/android/display_mode_utils.dart';
 import 'package:PiliPlus/utils/cache_manager.dart';
 import 'package:PiliPlus/utils/calc_window_position.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/extension/core_palettes_ext.dart';
+import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/font_utils.dart';
 import 'package:PiliPlus/utils/json_file_handler.dart';
 import 'package:PiliPlus/utils/max_screen_size.dart';
+import 'package:PiliPlus/utils/memory_budget.dart';
 import 'package:PiliPlus/utils/path_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/request_utils.dart';
@@ -32,11 +36,9 @@ import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:PiliPlus/utils/utils.dart';
 import 'package:catcher_2/catcher_2.dart';
-import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart' show DynamicColorPlugin;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
@@ -48,6 +50,8 @@ import 'package:screen_brightness_platform_interface/screen_brightness_platform_
 import 'package:window_manager/window_manager.dart' hide calcWindowPosition;
 
 WebViewEnvironment? webViewEnvironment;
+
+final _dynamicColorObserver = _DynamicColorObserver();
 
 EdgeInsets? tmpPadding;
 
@@ -105,6 +109,9 @@ void main() async {
     _initDownPath(),
     _initTmpPath(),
     CacheManager.ensureInitialized(),
+    // Android 17 应用内存上限适配：按设备内存给图片缓存 / 解码缓冲定预算
+    // （非 Android 平台内部直接返回，不读设备信息、不改变原有行为）
+    MemoryBudget.init(),
     ?FontUtils.init(),
   ]);
   Get
@@ -147,18 +154,10 @@ void main() async {
       ),
     );
     if (Platform.isAndroid) {
-      FlutterDisplayMode.supported.then((mode) {
-        final String? storageDisplay = GStorage.setting.get(
-          SettingBoxKey.displayMode,
-        );
-        DisplayMode? displayMode;
-        if (storageDisplay != null) {
-          displayMode = mode.firstWhereOrNull(
-            (e) => e.toString() == storageDisplay,
-          );
-        }
-        FlutterDisplayMode.setPreferredMode(displayMode ?? DisplayMode.auto);
-      });
+      // MI-04 / PL-08：省电模式、低电量、温控与画中画的降档调度（内部仅 Android 生效）
+      PowerSaveWatcher.init();
+      // MI-02：记录用户档位并应用场景化刷新率（内部仅 Android 生效）
+      DisplayModeUtils.init();
     } else {
       ScreenBrightnessPlatform.instance.setAutoReset(false);
     }
@@ -189,6 +188,8 @@ void main() async {
   if (Pref.dynamicColor) {
     await MyApp.initPlatformState();
   }
+  // 系统主题色 / 壁纸变化后重新取色（见 MyApp.refreshDynamicColor）
+  WidgetsBinding.instance.addObserver(_dynamicColorObserver);
 
   if (Pref.enableLog) {
     // 异常捕获 logo记录
@@ -346,9 +347,24 @@ class MyApp extends StatelessWidget {
     return child;
   }
 
+  /// 重新向系统取一次调色板。
+  ///
+  /// 系统主题色 / 壁纸变化后 App 的颜色要跟着变（原来只在启动前取一次，
+  /// 改完壁纸必须重启才生效）；颜色没变就不重建主题，避免白跑一次全量重绘。
+  static Future<void> refreshDynamicColor() async {
+    if (!Pref.dynamicColor) return;
+    final light = _light?.primary;
+    final dark = _dark?.primary;
+    if (!await initPlatformState(force: true)) return;
+    if (_light?.primary != light || _dark?.primary != dark) {
+      Get.updateMyAppTheme();
+    }
+  }
+
   /// from [DynamicColorBuilderState.initPlatformState]
-  static Future<bool> initPlatformState() async {
-    if (_light != null || _dark != null) return true;
+  static Future<bool> initPlatformState({bool force = false}) async {
+    final hadPalette = _light != null || _dark != null;
+    if (hadPalette && !force) return true;
     // Platform messages may fail, so we use a try/catch PlatformException.
     try {
       final colors = await DynamicColorPlugin.channel.invokeMethod(
@@ -369,6 +385,10 @@ class MyApp extends StatelessWidget {
         debugPrint('dynamic_color: Failed to obtain core palette.');
       }
     }
+
+    // 已经有调色板时只是“刷新失败”：保留上一次的颜色，
+    // 不能因为一次偶发失败就把用户的「动态取色」设置改掉
+    if (hadPalette) return true;
 
     try {
       final Color? accentColor = await DynamicColorPlugin.getAccentColor();
@@ -392,6 +412,16 @@ class MyApp extends StatelessWidget {
     }
     GStorage.setting.put(SettingBoxKey.dynamicColor, false);
     return false;
+  }
+}
+
+class _DynamicColorObserver with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 回前台时比较系统调色板是否变了（颜色没变不会重建主题）
+    if (state == AppLifecycleState.resumed) {
+      MyApp.refreshDynamicColor().ignore();
+    }
   }
 }
 

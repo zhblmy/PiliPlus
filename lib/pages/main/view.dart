@@ -6,6 +6,7 @@ import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/floating_navigation_bar.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/main_layout.dart';
 import 'package:PiliPlus/common/widgets/route_aware_mixin.dart';
 import 'package:PiliPlus/models/common/nav_bar_config.dart';
@@ -28,9 +29,14 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:win32/win32.dart' as kernel32;
 import 'package:window_manager/window_manager.dart';
 
+/// 底栏玻璃形状：只在上面两个角做圆角，像一张悬浮的玻璃板
+const _kBottomNavShape = RoundedRectangleBorder(
+  borderRadius: .vertical(top: .circular(18)),
+);
+const _kBottomNavBlur = 16.0;
+
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
-
   @override
   State<MainApp> createState() => _MainAppState();
 }
@@ -94,10 +100,14 @@ class _MainAppState extends PopScopeState<MainApp>
   @override
   void didPopNext() {
     addObserverMobile(this);
-    _mainController
-      ..checkUnreadDynamic()
-      ..checkDefaultSearch(true)
-      ..checkUnread(_mainController.useBottomNav);
+    // 这 3 个未读检查都会发网络请求，等返回转场播完再跑，
+    // 避免和转场收尾那一帧（整页首次实时绘制）抢帧
+    runAfterRouteAnimation(() {
+      _mainController
+        ..checkUnreadDynamic()
+        ..checkDefaultSearch(true)
+        ..checkUnread(_mainController.useBottomNav);
+    });
     super.didPopNext();
   }
 
@@ -339,40 +349,67 @@ class _MainAppState extends PopScopeState<MainApp>
           ),
         );
       } else if (_mainController.enableMYBar) {
-        bottomNav = Obx(
-          () => NavigationBar(
-            maintainBottomViewPadding: true,
-            onDestinationSelected: _mainController.setIndex,
-            selectedIndex: _mainController.selectedIndex.value,
-            destinations: _mainController.navigationBars
-                .map(
-                  (e) => NavigationDestination(
-                    label: e.label,
-                    icon: _buildIcon(type: e),
-                    selectedIcon: _buildIcon(type: e, selected: true),
-                  ),
-                )
-                .toList(),
+        bottomNav = LiquidGlass(
+          shape: _kBottomNavShape,
+          blur: _kBottomNavBlur,
+          color: _colorScheme.surfaceContainer.withValues(
+            alpha: _colorScheme.isDark ? 0.5 : 0.6,
+          ),
+          shadowColor: Colors.black.withValues(
+            alpha: _colorScheme.isDark ? 0.4 : 0.12,
+          ),
+          child: Obx(
+            () => NavigationBar(
+              maintainBottomViewPadding: true,
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              // 约 80 的 7/10
+              height: 56,
+              onDestinationSelected: _mainController.setIndex,
+              selectedIndex: _mainController.selectedIndex.value,
+              destinations: _mainController.navigationBars
+                  .map(
+                    (e) => NavigationDestination(
+                      label: e.label,
+                      icon: _buildIcon(type: e),
+                      selectedIcon: _buildIcon(type: e, selected: true),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
         );
       } else {
-        bottomNav = Obx(
-          () => BottomNavigationBar(
-            currentIndex: _mainController.selectedIndex.value,
-            onTap: _mainController.setIndex,
-            iconSize: 16,
-            selectedFontSize: 12,
-            unselectedFontSize: 12,
-            type: .fixed,
-            items: _mainController.navigationBars
-                .map(
-                  (e) => BottomNavigationBarItem(
-                    label: e.label,
-                    icon: _buildIcon(type: e),
-                    activeIcon: _buildIcon(type: e, selected: true),
-                  ),
-                )
-                .toList(),
+        bottomNav = LiquidGlass(
+          shape: _kBottomNavShape,
+          blur: _kBottomNavBlur,
+          color: _colorScheme.surfaceContainer.withValues(
+            alpha: _colorScheme.isDark ? 0.5 : 0.6,
+          ),
+          shadowColor: Colors.black.withValues(
+            alpha: _colorScheme.isDark ? 0.4 : 0.12,
+          ),
+          child: Obx(
+            () => BottomNavigationBar(
+              currentIndex: _mainController.selectedIndex.value,
+              onTap: _mainController.setIndex,
+              iconSize: 16,
+              selectedFontSize: 12,
+              unselectedFontSize: 12,
+              type: .fixed,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              items: _mainController.navigationBars
+                  .map(
+                    (e) => BottomNavigationBarItem(
+                      label: e.label,
+                      icon: _buildIcon(type: e),
+                      activeIcon: _buildIcon(type: e, selected: true),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
         );
       }
@@ -474,19 +511,32 @@ class _MainAppState extends PopScopeState<MainApp>
 
   @override
   Widget build(BuildContext context) {
+    // 竖屏底栏模式下 body 铺满全屏（含状态栏），状态栏那片交给页面自己：
+    // 首页是盖住状态栏的玻璃顶栏，其它页面补一个顶部内边距。
+    // 两种模式下都包一层 Padding（为 0 时无副作用），这样横竖屏切换时
+    // 页面的 element 不会被重建、状态不会丢。
+    final bool useBottomNav = _mainController.useBottomNav;
+    final EdgeInsets pagePadding = useBottomNav
+        ? .only(top: _padding.top)
+        : EdgeInsets.zero;
+    Widget pageOf(NavigationBarType type) => Padding(
+      padding: type == .home ? EdgeInsets.zero : pagePadding,
+      child: type.page,
+    );
+
     Widget child;
     if (_mainController.mainTabBarView) {
       child = TabBarView(
         controller: _mainController.controller,
         physics: const NeverScrollableScrollPhysics(),
-        scrollDirection: _mainController.useBottomNav ? .horizontal : .vertical,
-        children: _mainController.navigationBars.map((i) => i.page).toList(),
+        scrollDirection: useBottomNav ? .horizontal : .vertical,
+        children: _mainController.navigationBars.map(pageOf).toList(),
       );
     } else {
       child = PageView(
         controller: _mainController.controller,
         physics: const NeverScrollableScrollPhysics(),
-        children: _mainController.navigationBars.map((i) => i.page).toList(),
+        children: _mainController.navigationBars.map(pageOf).toList(),
       );
     }
 
@@ -502,7 +552,7 @@ class _MainAppState extends PopScopeState<MainApp>
           child: bottomNav,
         );
       }
-      padding = _padding.copyWith(bottom: 0);
+      padding = _padding.copyWith(top: 0, bottom: 0);
     } else {
       sideBar = DecoratedBox(
         decoration: BoxDecoration(

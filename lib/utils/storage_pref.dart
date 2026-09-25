@@ -37,6 +37,8 @@ import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/login_utils.dart';
+import 'package:PiliPlus/utils/device_state.dart';
+import 'package:PiliPlus/utils/memory_budget.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -266,8 +268,30 @@ abstract final class Pref {
     defaultValue: HwDecType.kHwdec,
   );
 
-  static String get videoSync =>
-      _setting.get(SettingBoxKey.videoSync, defaultValue: 'display-resample');
+  /// 硬解失败时自动逐级降级（mediacodec-copy → auto-copy → 软解）—— 性能报告 PL-05
+  static bool get hwdecFallback =>
+      _setting.get(SettingBoxKey.hwdecFallback, defaultValue: true);
+
+  /// Android 专属：mpv 视频输出后端，形如 `vo=gpu-next,gpu-api=vulkan`。
+  /// 空字符串 = 不设置（完全用 mpv 默认值）—— 性能报告 PL-02
+  static String get videoOutputBackend =>
+      _setting.get(SettingBoxKey.videoOutputBackend, defaultValue: '');
+
+  /// 场景化刷新率（性能报告 MI-02）：
+  /// 播放视频（内容 ≤ 45fps）/ 低功耗降档 / 画中画时降到 60Hz 档，退出后恢复
+  static bool get limitDisplayMode =>
+      _setting.get(SettingBoxKey.limitDisplayMode, defaultValue: true);
+
+  /// 视频同步模式（mpv `--video-sync`）。
+  ///
+  /// Android 默认由 `display-resample` 改为 `audio`（性能报告 PL-06）：
+  /// display-resample 会让 mpv 持续重采样音频、动态微调播放速度以匹配显示刷新率，
+  /// 在 120Hz LTPO 屏上是**持续**的重采样 + 帧重定时开销，而移动端收益有限。
+  /// 需要音画严格对齐的用户可在「播放设置 → 视频同步」改回。
+  static String get videoSync => _setting.get(
+    SettingBoxKey.videoSync,
+    defaultValue: Platform.isAndroid ? 'audio' : 'display-resample',
+  );
 
   static String get autosync => _setting.get(
     SettingBoxKey.autosync,
@@ -615,8 +639,10 @@ abstract final class Pref {
   static bool get showPgcTimeline =>
       _setting.get(SettingBoxKey.showPgcTimeline, defaultValue: true);
 
+  /// 图片磁盘缓存上限，默认 256 MiB。
+  /// 1 GiB 的默认值只会带来长期 flash 随机写与 LRU 淘汰开销（性能报告 I-01）。
   static num get maxCacheSize =>
-      _setting.get(SettingBoxKey.maxCacheSize) ?? 1 << 30;
+      _setting.get(SettingBoxKey.maxCacheSize) ?? (256 << 20);
 
   static bool get optTabletNav =>
       _setting.get(SettingBoxKey.optTabletNav, defaultValue: true);
@@ -634,8 +660,10 @@ abstract final class Pref {
   static String get banWordForDyn =>
       _setting.get(SettingBoxKey.banWordForDyn, defaultValue: '');
 
+  /// 日志默认关闭：release 下每条日志一次 fsync 会持续唤醒存储控制器
+  /// （性能报告 I-02）。用户可在「日志」页手动开启。
   static bool get enableLog =>
-      _setting.get(SettingBoxKey.enableLog, defaultValue: true);
+      _setting.get(SettingBoxKey.enableLog, defaultValue: false);
 
   static bool get disableAudioCDN =>
       _setting.get(SettingBoxKey.disableAudioCDN, defaultValue: false);
@@ -762,11 +790,24 @@ abstract final class Pref {
   static bool get enableMYBar =>
       _setting.get(SettingBoxKey.enableMYBar, defaultValue: true);
 
-  static Transition get pageTransition =>
-      Transition.values[_setting.get(
-        SettingBoxKey.pageTransition,
-        defaultValue: Transition.native.index,
-      )];
+  /// 页面过渡动画。
+  ///
+  /// Android 默认用 [Transition.sharedAxis]（Material X 轴推进 + 淡入，观感和
+  /// Android 14 系统自带的 fade forwards 一致），而不是 [Transition.native]：
+  /// native 在 Android 上走 Zoom 缩放 + 快照，**转场结束那一帧**会把快照丢掉、
+  /// 让整页首次实时绘制（`_ZoomTransitionBase.onAnimationStatusChange`），体感
+  /// 就是「动画收尾卡一下」。sharedAxis 不产生快照，成本被摊平到整段动画里。
+  ///
+  /// 另外注意：GetX 的路由不走 `ThemeData.pageTransitionsTheme`，
+  /// 改 `lib/utils/theme_utils.dart` 里的 `pageTransitionsTheme` 对本 App 无效。
+  static Transition get pageTransition => Transition.values[_setting.get(
+    SettingBoxKey.pageTransition,
+    defaultValue: _defaultPageTransition.index,
+  )];
+
+  static Transition get _defaultPageTransition => Platform.isAndroid
+      ? Transition.sharedAxis
+      : Transition.native;
 
   static bool get enableQuickDouble =>
       _setting.get(SettingBoxKey.enableQuickDouble, defaultValue: true);
@@ -827,8 +868,12 @@ abstract final class Pref {
       _setting.get(SettingBoxKey.bufferSec, defaultValue: 16.0);
 
   static Map<String, String> initBuffer([double playbackSpeed = 1.0]) {
-    final bufSec = Pref.bufferSec * playbackSpeed;
-    final bufSiz = (Pref.bufferSize * 0x100000).toStringAsFixed(0);
+    // Android 17 起系统有应用内存上限（见 MemoryBudget），内存紧张的设备把解码缓冲
+    // 减半；低功耗（省电/高温）时再降一档（见 DeviceState）——
+    // 非 Android / 未初始化时两个系数均为 1.0，行为与改动前一致。
+    final scale = MemoryBudget.bufferScale * DeviceState.bufferScale;
+    final bufSec = Pref.bufferSec * playbackSpeed * scale;
+    final bufSiz = (Pref.bufferSize * 0x100000 * scale).toStringAsFixed(0);
     return {
       'cache': 'yes',
       'cache-secs': bufSec.toStringAsFixed(3),
@@ -839,9 +884,16 @@ abstract final class Pref {
   }
 
   static Map<String, String> initLiveBuffer() {
+    // 同上：内存/电量紧张的设备把直播缓冲（2 倍系数）一并下调
+    final bufSiz =
+        (Pref.bufferSize *
+                0x200000 *
+                MemoryBudget.bufferScale *
+                DeviceState.bufferScale)
+            .toStringAsFixed(0);
     return {
       'cache': 'yes',
-      'demuxer-max-bytes': (Pref.bufferSize * 0x200000).toStringAsFixed(0),
+      'demuxer-max-bytes': bufSiz,
       'demuxer-max-back-bytes': '0',
     };
   }
@@ -1017,9 +1069,14 @@ abstract final class Pref {
   static bool get showDynDispute =>
       _setting.get(SettingBoxKey.showDynDispute, defaultValue: false);
 
+  /// 横向（首页分类 Tab 左右滑等）手势的触发阈值。
+  ///
+  /// 默认直接用**系统自己的触摸阈值**（`ViewConfiguration.getScaledTouchSlop`），
+  /// 手感才和系统一致；原来额外 `+6.0` 会让切换手势“慢半拍”。
+  /// 仍然可以在设置里自行调。
   static double get touchSlopH => _setting.get(
     SettingBoxKey.touchSlopH,
-    defaultValue: deviceTouchSlop + 6.0,
+    defaultValue: deviceTouchSlop,
   );
 
   static bool get saveReply =>

@@ -252,6 +252,140 @@ extension type AndroidHelper._(jni$_.JObject _$this) implements jni$_.JObject {
     return _sdkInt(_$$classRef.pointer, _id_sdkInt.pointer).integer;
   }
 
+  static final _id_thermalStatus = _class.staticMethodId(
+    r'thermalStatus',
+    r'()I',
+  );
+
+  static final _thermalStatus =
+      jni$_.ProtectedJniExtensions.lookup<
+            jni$_.NativeFunction<
+              jni$_.JniResult Function(
+                jni$_.Pointer<jni$_.Void>,
+                jni$_.JMethodIDPtr,
+              )
+            >
+          >('globalEnv_CallStaticIntMethod')
+          .asFunction<
+            jni$_.JniResult Function(
+              jni$_.Pointer<jni$_.Void>,
+              jni$_.JMethodIDPtr,
+            )
+          >();
+
+  /// from: `static public int thermalStatus()`
+  static core$_.int thermalStatus() {
+    final _$$classRef = _class.reference;
+    return _thermalStatus(
+      _$$classRef.pointer,
+      _id_thermalStatus.pointer,
+    ).integer;
+  }
+
+  static final _id_openAppSettings = _class.staticMethodId(
+    r'openAppSettings',
+    r'(Ljava/lang/String;)V',
+  );
+
+  static final _openAppSettings =
+      jni$_.ProtectedJniExtensions.lookup<
+            jni$_.NativeFunction<
+              jni$_.JThrowablePtr Function(
+                jni$_.Pointer<jni$_.Void>,
+                jni$_.JMethodIDPtr,
+                jni$_.VarArgs<(jni$_.Pointer<jni$_.Void>,)>,
+              )
+            >
+          >('globalEnv_CallStaticVoidMethod')
+          .asFunction<
+            jni$_.JThrowablePtr Function(
+              jni$_.Pointer<jni$_.Void>,
+              jni$_.JMethodIDPtr,
+              jni$_.Pointer<jni$_.Void>,
+            )
+          >();
+
+  /// from: `static public void openAppSettings(java.lang.String type)`
+  static void openAppSettings(
+    jni$_.JString type,
+  ) {
+    final _$$classRef = _class.reference;
+    final _$type = type.reference;
+    _openAppSettings(
+      _$$classRef.pointer,
+      _id_openAppSettings.pointer,
+      _$type.pointer,
+    ).check();
+  }
+
+  static final _id_isIgnoringBatteryOptimizations = _class.staticMethodId(
+    r'isIgnoringBatteryOptimizations',
+    r'()I',
+  );
+
+  static final _isIgnoringBatteryOptimizations =
+      jni$_.ProtectedJniExtensions.lookup<
+            jni$_.NativeFunction<
+              jni$_.JniResult Function(
+                jni$_.Pointer<jni$_.Void>,
+                jni$_.JMethodIDPtr,
+              )
+            >
+          >('globalEnv_CallStaticIntMethod')
+          .asFunction<
+            jni$_.JniResult Function(
+              jni$_.Pointer<jni$_.Void>,
+              jni$_.JMethodIDPtr,
+            )
+          >();
+
+  /// from: `static public int isIgnoringBatteryOptimizations()`
+  static core$_.int isIgnoringBatteryOptimizations() {
+    final _$$classRef = _class.reference;
+    return _isIgnoringBatteryOptimizations(
+      _$$classRef.pointer,
+      _id_isIgnoringBatteryOptimizations.pointer,
+    ).integer;
+  }
+
+  static final _id_setSustainedPerformanceMode = _class.staticMethodId(
+    r'setSustainedPerformanceMode',
+    r'(JZ)V',
+  );
+
+  static final _setSustainedPerformanceMode =
+      jni$_.ProtectedJniExtensions.lookup<
+            jni$_.NativeFunction<
+              jni$_.JThrowablePtr Function(
+                jni$_.Pointer<jni$_.Void>,
+                jni$_.JMethodIDPtr,
+                jni$_.VarArgs<(jni$_.Int64, jni$_.Int32)>,
+              )
+            >
+          >('globalEnv_CallStaticVoidMethod')
+          .asFunction<
+            jni$_.JThrowablePtr Function(
+              jni$_.Pointer<jni$_.Void>,
+              jni$_.JMethodIDPtr,
+              core$_.int,
+              core$_.int,
+            )
+          >();
+
+  /// from: `static public void setSustainedPerformanceMode(long engineId, boolean enable)`
+  static void setSustainedPerformanceMode(
+    core$_.int engineId,
+    core$_.bool enable,
+  ) {
+    final _$$classRef = _class.reference;
+    _setSustainedPerformanceMode(
+      _$$classRef.pointer,
+      _id_setSustainedPerformanceMode.pointer,
+      engineId,
+      enable ? 1 : 0,
+    ).check();
+  }
+
   static final _id_back = _class.staticMethodId(
     r'back',
     r'()V',
@@ -856,6 +990,21 @@ extension type AndroidHelper$ToDart._(jni$_.JObject _$this)
   /// The returned object must be released after use, by calling the [release] method.
   static set onConfigurationChanged(Runnable? value) =>
       _id_onConfigurationChanged.set(_class, Runnable.type, value);
+
+  static final _id_onPipModeChanged = _class.staticFieldId(
+    r'onPipModeChanged',
+    r'Ljava/lang/Runnable;',
+  );
+
+  /// from: `static public java.lang.Runnable onPipModeChanged`
+  /// The returned object must be released after use, by calling the [release] method.
+  static Runnable? get onPipModeChanged =>
+      _id_onPipModeChanged.getNullable(_class, Runnable.type) as Runnable?;
+
+  /// from: `static public java.lang.Runnable onPipModeChanged`
+  /// The returned object must be released after use, by calling the [release] method.
+  static set onPipModeChanged(Runnable? value) =>
+      _id_onPipModeChanged.set(_class, Runnable.type, value);
 }
 
 final class $AndroidHelper$ToDart$Type$

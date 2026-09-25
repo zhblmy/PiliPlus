@@ -108,6 +108,38 @@ abstract final class PiliAndroidHelper {
     return null;
   }
 
+  /// 当前设备热状态（`PowerManager.THERMAL_STATUS_*`，API 29 以下返回 0 = NONE）。
+  /// 供低功耗降档判断（性能报告 MI-04）。
+  @pragma('vm:prefer-inline')
+  static int thermalStatus() => AndroidHelper.thermalStatus();
+
+  /// 是否已加入电池优化白名单（“省电策略 = 无限制”的前置条件）
+  @pragma('vm:prefer-inline')
+  static bool isIgnoringBatteryOptimizations() =>
+      AndroidHelper.isIgnoringBatteryOptimizations() == 1;
+
+  /// 申报持续性能模式（长时播放/弹幕下帧时间更平缓，性能报告 MI-15）
+  @pragma('vm:prefer-inline')
+  static void setSustainedPerformanceMode(bool enable) =>
+      AndroidHelper.setSustainedPerformanceMode(
+        PlatformDispatcher.instance.engineId!,
+        enable,
+      );
+
+  /// 跳转系统/澎湃 OS 设置页。
+  ///
+  /// [type]：`autostart`（自启动）| `battery`（电池优化白名单）|`permission`（权限管理，
+  /// 后台弹出界面在其中）| `notification`（通知）| `display`（显示）| 其它 = 应用详情页。
+  /// 原生侧失败会自行回退，这里不需要处理结果。
+  static void openAppSettings(String type) {
+    final jType = type.toJString();
+    try {
+      AndroidHelper.openAppSettings(jType);
+    } finally {
+      jType.release();
+    }
+  }
+
   static void createShortcut(String id, String uri, String label, String path) {
     final jId = id.toJString();
     final jUri = uri.toJString();

@@ -216,7 +216,7 @@ class _InfoCard extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           title,
-          style: TextStyle(fontWeight: .bold, color: color, fontSize: 15),
+          style: TextStyle(color: color, fontSize: 15),
         ),
         ...map.entries.map(
           (entry) => Text.rich(
@@ -252,7 +252,7 @@ class _InfoCard extends StatelessWidget {
           const Expanded(
             child: Text(
               '相关信息',
-              style: TextStyle(fontWeight: .bold, fontSize: 15),
+              style: TextStyle(fontSize: 15),
               maxLines: 1,
               overflow: .ellipsis,
             ),
@@ -328,7 +328,7 @@ class _ReportCard extends StatelessWidget {
               children: [
                 Text(
                   report.item.error.toString(),
-                  style: const TextStyle(fontWeight: .bold, fontSize: 15),
+                  style: const TextStyle(fontSize: 15),
                   maxLines: 2,
                   overflow: .ellipsis,
                 ),
@@ -376,11 +376,7 @@ class _ReportCard extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           '错误详情',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: colorScheme.error,
-            fontSize: 15,
-          ),
+          style: TextStyle(color: colorScheme.error, fontSize: 15),
         ),
         const SizedBox(height: 8),
         Container(
@@ -403,11 +399,7 @@ class _ReportCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             '堆栈跟踪',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.error,
-              fontSize: 15,
-            ),
+            style: TextStyle(color: colorScheme.error, fontSize: 15),
           ),
           const SizedBox(height: 8),
           Container(

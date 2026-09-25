@@ -1,5 +1,4 @@
 import 'package:collection/collection.dart';
-import 'package:material_color_utilities/dynamiccolor/dynamic_color.dart';
 import 'package:material_color_utilities/dynamiccolor/dynamic_scheme.dart';
 import 'package:material_color_utilities/dynamiccolor/variant.dart';
 import 'package:material_color_utilities/palettes/core_palettes.dart';
@@ -37,8 +36,10 @@ extension CorePalettesExt on CorePalettes {
       brightness: brightness,
       // background: Color(scheme.background),
       // onBackground: Color(scheme.onBackground),
-      // surface: Color(scheme.surface),
-      surface: Color(MaterialLegacyDynamicColors.surface.getArgb(scheme)),
+      // 用 M3 标准档位（亮 98 / 暗 6），和系统其它 App 一致。
+      // 不要自作聪明改成 99/10：暗色下 tone 10 正好等于 surfaceContainerLow（卡片色），
+      // 页面背景会和卡片撞成同一个颜色，层次全丢。
+      surface: Color(scheme.surface),
       surfaceDim: Color(scheme.surfaceDim),
       surfaceBright: Color(scheme.surfaceBright),
       surfaceContainerLowest: Color(scheme.surfaceContainerLowest),
@@ -106,15 +107,5 @@ List<int> _getPartition(
   return list.slice(
     partitionNumber * partitionSize,
     (partitionNumber + 1) * partitionSize,
-  );
-}
-
-class MaterialLegacyDynamicColors {
-  static final surface = DynamicColor.fromPalette(
-    name: 'surface',
-    palette: (s) => s.neutralPalette,
-    // tone: (s) => s.isDark ? 6 : 98,
-    tone: (s) => s.isDark ? 10 : 99,
-    isBackground: true,
   );
 }

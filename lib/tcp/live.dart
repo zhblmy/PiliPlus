@@ -48,7 +48,8 @@ class PackageHeaderRes extends PackageHeader {
   final int headerSize;
 
   static PackageHeaderRes? fromBytesData(Uint8List data) {
-    if (data.length < 10) {
+    // 包头固定 0x10 字节（seq 位于偏移 12~15），少于 16 字节无法解析
+    if (data.length < 0x10) {
       logger.w('数据不足以解析PackageHeader');
       return null;
     }

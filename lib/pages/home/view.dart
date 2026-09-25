@@ -1,6 +1,7 @@
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/custom_height_widget.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
+import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/pages/common/common_page.dart';
 import 'package:PiliPlus/pages/home/controller.dart';
@@ -8,10 +9,14 @@ import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/mine/controller.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
+import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:get/get.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:material_ui/material_ui.dart';
+
+/// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
+const _kTopBarShape = RoundedRectangleBorder();
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -41,8 +46,15 @@ class _HomePageState extends CommonPageState<HomePage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 搜索栏只在下半屏（竖屏、无侧栏）显示
+    final bool showAppBar =
+        !_mainController.useSideBar && MediaQuery.sizeOf(context).isPortrait;
+    final bool hasTabBar = _homeController.tabs.length > 1;
+    // 分类 Tab 栏的固定高度：4 的顶部间距 + 42
+    const double tabBarHeight = 46.0;
+
     Widget tabBar;
-    if (_homeController.tabs.length > 1) {
+    if (hasTabBar) {
       tabBar = Padding(
         padding: const EdgeInsets.only(top: 4),
         child: SizedBox(
@@ -65,6 +77,18 @@ class _HomePageState extends CommonPageState<HomePage>
           ),
         ),
       );
+    } else {
+      tabBar = const SizedBox(height: 6);
+    }
+
+    final body = onBuild(
+      tabBarView(
+        controller: _homeController.tabController,
+        children: _homeController.tabs.map((e) => e.page).toList(),
+      ),
+    );
+
+    if (!showAppBar) {
       if (_homeController.hideTopBar &&
           _mainController.barHideType == .instant) {
         tabBar = Material(
@@ -72,28 +96,89 @@ class _HomePageState extends CommonPageState<HomePage>
           child: tabBar,
         );
       }
-    } else {
-      tabBar = const SizedBox(height: 6);
+      return Column(
+        children: [
+          tabBar,
+          Expanded(child: body),
+        ],
+      );
     }
-    return Column(
-      children: [
-        if (!_mainController.useSideBar &&
-            MediaQuery.sizeOf(context).isPortrait)
-          customAppBar(),
-        tabBar,
-        Expanded(
-          child: onBuild(
-            tabBarView(
-              controller: _homeController.tabController,
-              children: _homeController.tabs.map((e) => e.page).toList(),
+
+    // 顶栏（搜索栏 + 分类 Tab）改为液体玻璃悬浮层，
+    // 列表内容不再被挤在它下面，而是从它下方穿过并被模糊。
+    Widget glassTopBar() {
+      final (appBar, appBarHeight) = _appBarArea();
+      final double inset = appBarHeight + (hasTabBar ? tabBarHeight : 6.0);
+      final bool isDark = _colorScheme.isDark;
+      return Stack(
+        children: [
+          Positioned.fill(child: _topBarInset(inset, body)),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: LiquidGlass(
+              shape: _kTopBarShape,
+              blur: 16,
+              color: _colorScheme.surface.withValues(
+                alpha: isDark ? 0.5 : 0.62,
+              ),
+              shadowColor: Colors.black.withValues(
+                alpha: isDark ? 0.4 : 0.1,
+              ),
+              child: Column(
+                mainAxisSize: .min,
+                children: [appBar, tabBar],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      );
+    }
+
+    // hideTopBar 时顶栏会随滚动收起，需要在同一次刷新里取到最新高度
+    return _homeController.hideTopBar ? Obx(glassTopBar) : glassTopBar();
+  }
+
+  /// 让滚动内容为玻璃顶栏让出空间；instant 模式下顶栏是整体收起/展开的，
+  /// 内边距要跟着一起动画，否则会闪出一条空白。
+  Widget _topBarInset(double inset, Widget child) {
+    if (_homeController.hideTopBar && _mainController.barHideType == .instant) {
+      return TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOutCubicEmphasized,
+        tween: Tween<double>(end: inset),
+        builder: (context, value, child) =>
+            TopBarInset(value: value, child: child!),
+        child: child,
+      );
+    }
+    return TopBarInset(value: inset, child: child);
+  }
+
+  /// 玻璃顶栏的顶部区域：状态栏那片 + 搜索栏。
+  /// 状态栏高度单独占一块（不跟着搜索栏收起），这样玻璃始终盖住状态栏。
+  /// 第二项是这一区域当前的高度（收起动画中会变化）。
+  (Widget, double) _appBarArea() {
+    final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
+    final (appBar, appBarHeight) = _searchBarArea();
+    return (
+      Column(
+        mainAxisSize: .min,
+        children: [
+          SizedBox(height: statusBarHeight),
+          // CustomHeightWidget / AnimatedContainer 收起时只会把内容挪走、并不裁剪，
+          // 超出搜索栏那块的会画到状态栏那片玻璃（或分类 Tab）上，必须裁掉。
+          // 以前是靠外层 TabBarView 的裁剪兜住的。
+          ClipRect(child: appBar),
+        ],
+      ),
+      statusBarHeight + appBarHeight,
     );
   }
 
-  Widget customAppBar() {
+  /// 顶部搜索栏本身（不含状态栏那片），第二项是它当前的高度
+  (Widget, double) _searchBarArea() {
     const padding = EdgeInsets.fromLTRB(14, 6, 14, 0);
     final child = Row(
       children: [
@@ -106,24 +191,23 @@ class _HomePageState extends CommonPageState<HomePage>
     );
     if (_homeController.hideTopBar) {
       if (_mainController.barOffset case final barOffset?) {
-        return Obx(
-          () {
-            final offset = barOffset.value;
-            return CustomHeightWidget(
-              offset: Offset(0, -offset),
-              height: Style.topBarHeight - offset,
-              child: Padding(
-                padding: padding,
-                child: child,
-              ),
-            );
-          },
+        final offset = barOffset.value;
+        return (
+          CustomHeightWidget(
+            offset: Offset(0, -offset),
+            height: Style.topBarHeight - offset,
+            child: Padding(
+              padding: padding,
+              child: child,
+            ),
+          ),
+          Style.topBarHeight - offset,
         );
       }
       if (_homeController.showTopBar case final showTopBar?) {
-        return Obx(() {
-          final showSearchBar = showTopBar.value;
-          return AnimatedOpacity(
+        final showSearchBar = showTopBar.value;
+        return (
+          AnimatedOpacity(
             opacity: showSearchBar ? 1 : 0,
             duration: const Duration(milliseconds: 300),
             child: AnimatedContainer(
@@ -133,14 +217,18 @@ class _HomePageState extends CommonPageState<HomePage>
               padding: padding,
               child: child,
             ),
-          );
-        });
+          ),
+          showSearchBar ? Style.topBarHeight : 0,
+        );
       }
     }
-    return Container(
-      height: Style.topBarHeight,
-      padding: padding,
-      child: child,
+    return (
+      Container(
+        height: Style.topBarHeight,
+        padding: padding,
+        child: child,
+      ),
+      Style.topBarHeight,
     );
   }
 
