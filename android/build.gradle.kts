@@ -1,6 +1,11 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 allprojects {
+    // Java 源码统一按 UTF-8 解码：源码文件本身是 UTF-8，而 zh-CN Windows 上平台默认编码是 GBK。
+    // 放在根脚本的 allprojects 里，app 与所有插件模块一起生效。
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
     repositories {
         google()
         mavenCentral()
