@@ -68,6 +68,15 @@ class _HomePageState extends CommonPageState<HomePage>
             dividerHeight: 0,
             splashBorderRadius: Style.mdRadius,
             tabAlignment: TabAlignment.center,
+            // 与 M3 默认指示线（3px、圆角、primary 色）一致，只把下划线上移，
+            // 让它与标签文字的距离约缩小一半（42 高的 Tab 栏下约 12 → 约 6）
+            indicator: UnderlineTabIndicator(
+              insets: const EdgeInsets.only(bottom: 6),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(3),
+              ),
+              borderSide: BorderSide(width: 3, color: _colorScheme.primary),
+            ),
             onTap: (_) {
               feedBack();
               if (!_homeController.tabController.indexIsChanging) {
@@ -177,17 +186,32 @@ class _HomePageState extends CommonPageState<HomePage>
     );
   }
 
+  /// 顶栏这一行（搜索框 + 消息按钮 + 头像）的高度。
+  /// 「行高 + 上下内边距」必须刚好等于 [Style.topBarHeight]：
+  /// 否则收起/展开时内容会超出顶栏区域被 ClipRect 裁掉，
+  /// 看起来就是「收起隐藏不全 / 下拉展开不全」。
+  static const double _searchRowHeight = 48;
+  static const double _searchRowVPadding =
+      (Style.topBarHeight - _searchRowHeight) / 2;
+
   /// 顶部搜索栏本身（不含状态栏那片），第二项是它当前的高度
   (Widget, double) _searchBarArea() {
-    const padding = EdgeInsets.fromLTRB(14, 6, 14, 0);
-    final child = Row(
-      children: [
-        searchBar(),
-        const SizedBox(width: 4),
-        msgBadge(_mainController),
-        const SizedBox(width: 8),
-        userAvatar(colorScheme: _colorScheme, mainController: _mainController),
-      ],
+    // 上下对称，行本身在 52 高的区域里居中
+    const padding = EdgeInsets.symmetric(
+      horizontal: 14,
+      vertical: _searchRowVPadding,
+    );
+    final child = SizedBox(
+      height: _searchRowHeight,
+      child: Row(
+        children: [
+          searchBar(),
+          const SizedBox(width: 4),
+          msgBadge(_mainController),
+          const SizedBox(width: 8),
+          userAvatar(colorScheme: _colorScheme, mainController: _mainController),
+        ],
+      ),
     );
     if (_homeController.hideTopBar) {
       if (_mainController.barOffset case final barOffset?) {
@@ -233,10 +257,11 @@ class _HomePageState extends CommonPageState<HomePage>
   }
 
   Widget searchBar() {
-    const borderRadius = BorderRadius.all(Radius.circular(25));
+    // 原 25 / 44，按 0.8 倍缩小
+    const borderRadius = BorderRadius.all(Radius.circular(20));
     return Expanded(
       child: SizedBox(
-        height: 44,
+        height: 35,
         child: Material(
           borderRadius: borderRadius,
           color: _colorScheme.onSecondaryContainer.withValues(alpha: 0.05),
@@ -253,13 +278,14 @@ class _HomePageState extends CommonPageState<HomePage>
             ),
             child: Row(
               children: [
-                const SizedBox(width: 14),
+                const SizedBox(width: 11),
                 Icon(
                   Icons.search_outlined,
+                  size: 19,
                   color: _colorScheme.onSecondaryContainer,
                   semanticLabel: '搜索',
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Obx(
                     () => Text(
@@ -270,7 +296,7 @@ class _HomePageState extends CommonPageState<HomePage>
                     ),
                   ),
                 ),
-                const SizedBox(width: 5),
+                const SizedBox(width: 4),
               ],
             ),
           ),

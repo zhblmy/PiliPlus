@@ -170,7 +170,8 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.transparent,
       appBar: PreferredSize(
-        preferredSize: const .fromHeight(50),
+        // 与首页分类 Tab 栏一致：42 高（文字垂直居中，下划线上移后空隙约 6）
+        preferredSize: const .fromHeight(42),
         child: Row(
           children: [
             ?leading,
@@ -182,12 +183,17 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
                 dividerColor: Colors.transparent,
                 labelColor: colorScheme.primary,
                 indicatorColor: colorScheme.primary,
+                // 与 M3 默认指示线（3px、圆角、primary 色）一致，只把下划线上移，
+                // 让它与标签文字的距离约缩小一半（42 高的 Tab 栏下约 12 → 约 6）
+                indicator: UnderlineTabIndicator(
+                  insets: const EdgeInsets.only(bottom: 6),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(3),
+                  ),
+                  borderSide: BorderSide(width: 3, color: colorScheme.primary),
+                ),
                 controller: _dynamicsController.tabController,
                 unselectedLabelColor: colorScheme.onSurface,
-                labelStyle:
-                    TabBarTheme.of(context).labelStyle
-                        ?.copyWith(fontSize: 13) ??
-                    const TextStyle(fontSize: 13),
                 tabs: DynamicsTabType.values
                     .map((e) => Tab(text: e.label))
                     .toList(),
