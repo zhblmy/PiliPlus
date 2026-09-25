@@ -25,6 +25,17 @@ abstract final class GStorage {
   static late final Box<Uint8List>? reply;
 
   static Future<void> init() async {
+    await initHot();
+    await openColdBoxes();
+  }
+
+  /// 打开「首帧之前必需」的 box（冷启动优化 S-04）。
+  ///
+  /// 判定依据（都是首帧前就会读到的）：
+  /// - `setting`：`Pref` 的所有读取都落在它上面；
+  /// - `localCache`：`wbi_sign`、`Pref.blackMids` 等首个网络请求就会用到；
+  /// - `userInfo` + `account`（[Accounts.init]）：`Request.setCookie()` 需要登录态。
+  static Future<void> initHot() async {
     Hive.init(path.join(appSupportDirPath, 'hive'));
     regAdapter();
 
@@ -45,6 +56,14 @@ abstract final class GStorage {
       ).then((res) => localCache = res),
       // 设置
       Hive.openBox('setting').then((res) => setting = res),
+      Accounts.init(),
+    ]);
+  }
+
+  /// 打开其余 box（冷启动优化 S-04）：调用方应与启动期的其它初始化**并发**等待，
+  /// 这样首帧前仍然全部就绪（访问语义与改动前完全一致），但不再串行占在关键路径上。
+  static Future<void> openColdBoxes() async {
+    await Future.wait([
       // 搜索历史
       Hive.openBox(
         'historyWord',
@@ -54,7 +73,6 @@ abstract final class GStorage {
       ).then((res) => historyWord = res),
       // 视频设置
       Hive.openBox('video').then((res) => video = res),
-      Accounts.init(),
       Hive.openBox<int>(
         'watchProgress',
         keyComparator: _intStrDescKeyComparator,

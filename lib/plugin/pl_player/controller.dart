@@ -40,6 +40,7 @@ import 'package:PiliPlus/utils/extension/box_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:PiliPlus/utils/image_utils.dart';
+import 'package:PiliPlus/utils/media_kit_util.dart';
 import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/path_utils.dart';
@@ -769,6 +770,8 @@ class PlPlayerController
 
   Future<Player> _initPlayer() async {
     assert(_videoPlayerController == null);
+    // 冷启动优化 S-02：libmpv 改在首帧后预热，创建播放器前必须确保已加载
+    ensureMediaKitInitialized();
     final opt = {
       'video-sync': Pref.videoSync,
       if (Platform.isAndroid) 'ao': Pref.audioOutput,
@@ -1303,7 +1306,9 @@ class PlPlayerController
     }
 
     // Android 17 后台音频加固：先让前台服务进入「播放中」再开始写音频，
-    // 否则后台恢复播放时音频可能被系统静默限制（见 ensureForegroundPlaying）
+    // 否则后台恢复播放时音频可能被系统静默限制（见 ensureForegroundPlaying）。
+    // 冷启动优化 S-01 之后音频服务是「发起但不等待」的，所以这里必须先等它就绪。
+    await ensureServiceLocator();
     videoPlayerServiceHandler?.ensureForegroundPlaying();
 
     await _videoPlayerController?.play();

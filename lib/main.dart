@@ -26,6 +26,7 @@ import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/font_utils.dart';
 import 'package:PiliPlus/utils/json_file_handler.dart';
 import 'package:PiliPlus/utils/max_screen_size.dart';
+import 'package:PiliPlus/utils/media_kit_util.dart';
 import 'package:PiliPlus/utils/memory_budget.dart';
 import 'package:PiliPlus/utils/path_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
@@ -93,18 +94,40 @@ Future<void> _initAppPath() async {
   appSupportDirPath = (await getApplicationSupportDirectory()).path;
 }
 
+/// 存储初始化失败：拷贝错误信息后退出。
+/// 与改动前 `GStorage.init()` 的失败路径保持完全一致。
+Future<void> _exitOnStorageError(Object e) async {
+  await Utils.copyText(e.toString(), needToast: false);
+  if (kDebugMode) debugPrint('GStorage init error: $e');
+  exit(0);
+}
+
 void main() async {
   ScaledWidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
+  // 冷启动优化 S-02：不再在这里加载 libmpv.so。
+  // `MediaKit.ensureInitialized()` 内部会 `DynamicLibrary.open('libmpv.so')`，
+  // 而首帧并不需要播放器 —— 改为首帧之后、首次创建播放器之前执行
+  // （见下方 addPostFrameCallback(…) 与 ensureMediaKitInitialized）。
   await _initAppPath();
   try {
-    await GStorage.init();
+    // 冷启动优化 S-04：只阻塞「首帧必需」的 box（setting / localCache /
+    // userInfo / account），其余 box 与后续启动工作并发打开。
+    await GStorage.initHot();
   } catch (e) {
-    await Utils.copyText(e.toString(), needToast: false);
-    if (kDebugMode) debugPrint('GStorage init error: $e');
-    exit(0);
+    await _exitOnStorageError(e);
   }
+  // 冷 box 的失败处理与热 box 一致：在 Future 内部消化，否则它会变成
+  // Future.wait 里的未捕获异常，表现成「卡在启动画面」。
+  final coldBoxes = GStorage.openColdBoxes().onError(
+    (Object e, StackTrace s) => _exitOnStorageError(e),
+  );
   ScaledWidgetsFlutterBinding.instance.scaleFactor = Pref.uiScale;
+  // 冷启动优化 S-03：动态取色是一次 platform channel 往返，与下面的启动工作并行
+  // 发起，不再像原来那样串行等在所有初始化之后（渲染前仍会等待完成，避免首帧
+  // 闪一次默认配色）。
+  final dynamicColorReady = Pref.dynamicColor
+      ? MyApp.initPlatformState()
+      : null;
   await Future.wait([
     _initDownPath(),
     _initTmpPath(),
@@ -113,6 +136,8 @@ void main() async {
     // （非 Android 平台内部直接返回，不读设备信息、不改变原有行为）
     MemoryBudget.init(),
     ?FontUtils.init(),
+    coldBoxes, // S-04
+    ?dynamicColorReady, // S-03
   ]);
   Get
     ..lazyPut(AccountService.new)
@@ -121,9 +146,13 @@ void main() async {
 
   if (PlatformUtils.isMobile) {
     if (Platform.isAndroid) MaxScreenSize.init();
+    // 冷启动优化 S-01：音频服务改为「同步发起、不等待」——冷启动关键路径上少一次
+    // MethodChannel 往返 + 前台服务创建的等待。在应用可见时发起，该前台服务依旧
+    // 会被系统记为具备 Android 17 要求的使用时(WIU)能力（见 A17-01）；真正需要
+    // handler 的地方（如播放器 play()）会自己 `await ensureServiceLocator()`。
+    setupServiceLocator();
     await Future.wait([
       if (Pref.horizontalScreen) ?fullMode() else ?portraitUpMode(),
-      setupServiceLocator(),
     ]);
   } else if (Platform.isWindows) {
     if (await WebViewEnvironment.getAvailableVersion() != null) {
@@ -134,7 +163,8 @@ void main() async {
       );
     }
   } else if (Platform.isMacOS) {
-    await setupServiceLocator();
+    setupServiceLocator();
+    await ensureServiceLocator();
   }
 
   Request();
@@ -185,14 +215,21 @@ void main() async {
     });
   }
 
-  if (Pref.dynamicColor) {
-    await MyApp.initPlatformState();
-  }
+  // 冷启动优化 S-03：动态取色已在上面的 Future.wait 里与其它启动工作并行完成
   // 系统主题色 / 壁纸变化后重新取色（见 MyApp.refreshDynamicColor）
   WidgetsBinding.instance.addObserver(_dynamicColorObserver);
 
+  // 冷启动优化 S-02：首帧之后再加载 libmpv.so。放在 post-frame 里是为了让「首帧」
+  // 不被 dlopen 与符号绑定拖慢；所有创建播放器的地方都还会调一次
+  // ensureMediaKitInitialized（幂等），所以即使这里被推迟也不会漏初始化。
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => ensureMediaKitInitialized(),
+  );
+
   if (Pref.enableLog) {
     // 异常捕获 logo记录
+    // `NativePlayer.apiVersion` 需要 libmpv 已加载（S-02 之后不再由 main 顶部保证）
+    ensureMediaKitInitialized();
     final customParameters = {
       'Build Time': DateFormatUtils.format(
         BuildConfig.buildTime,

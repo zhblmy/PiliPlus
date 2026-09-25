@@ -222,8 +222,11 @@ List<SettingsModel> get playSettings => [
       leading: const Icon(Icons.picture_in_picture_outlined),
       setKey: SettingBoxKey.autoPiP,
       defaultVal: false,
-      onChanged: (val) {
-        if (val && !videoPlayerServiceHandler!.enableBackgroundPlay) {
+      onChanged: (val) async {
+        // 冷启动优化 S-01：音频服务是「发起但不等待」初始化的，这里先用之前先等它就绪
+        await ensureServiceLocator();
+        // 初始化失败时 handler 为 null（service_locator 内部已消化错误），不能强解包
+        if (val && !(videoPlayerServiceHandler?.enableBackgroundPlay ?? false)) {
           SmartDialog.showToast('建议开启后台音频服务');
         }
       },
@@ -289,7 +292,10 @@ List<SettingsModel> get playSettings => [
       setKey: SettingBoxKey.enableBackgroundPlay,
       defaultVal: true,
       onChanged: (value) async {
-        videoPlayerServiceHandler!.enableBackgroundPlay = value;
+        // 冷启动优化 S-01：音频服务是「发起但不等待」初始化的，使用前先等它就绪
+        await ensureServiceLocator();
+        // 初始化失败时 handler 为 null（service_locator 内部已消化错误），不能强解包
+        videoPlayerServiceHandler?.enableBackgroundPlay = value;
         if (value) {
           // MI-03：Android 13+ / 澎湃 OS 上通知权限没授予时，后台播放的媒体控制
           // 通知与锁屏控件不会显示，用户会误以为「后台播放无效」，所以开启时申请一次

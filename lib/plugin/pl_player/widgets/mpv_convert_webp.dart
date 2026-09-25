@@ -5,6 +5,7 @@ import 'dart:ffi';
 
 import 'package:PiliPlus/http/browser_ua.dart';
 import 'package:PiliPlus/http/constants.dart';
+import 'package:PiliPlus/utils/media_kit_util.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:get/get_rx/get_rx.dart';
@@ -16,7 +17,9 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit/src/player/native/core/initializer.dart';
 
 class MpvConvertWebp {
-  final _mpv = NativePlayer.mpv;
+  // 冷启动优化 S-02：libmpv 改在首帧后预热，这里改为惰性取值，
+  // 保证先经过 `_init()` 里的 ensureMediaKitInitialized 再访问 NativePlayer.mpv。
+  late final _mpv = NativePlayer.mpv;
   late final Pointer<generated.mpv_handle> _ctx;
   final _completer = Completer<bool>();
 
@@ -53,6 +56,8 @@ class MpvConvertWebp {
   }) : duration = end - start;
 
   Future<void> _init() async {
+    // 冷启动优化 S-02：libmpv 改在首帧后预热，使用前必须确保已加载
+    ensureMediaKitInitialized();
     final enableHA = Pref.enableHA;
     _ctx = await Initializer.create(
       _mpv,

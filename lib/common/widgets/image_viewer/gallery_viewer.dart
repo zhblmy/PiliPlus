@@ -34,6 +34,7 @@ import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/extension/string_ext.dart';
 import 'package:PiliPlus/utils/image_utils.dart';
 import 'package:PiliPlus/utils/max_screen_size.dart';
+import 'package:PiliPlus/utils/media_kit_util.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
@@ -114,6 +115,8 @@ class _GalleryViewerState extends State<GalleryViewer>
 
   Future<void> _initPlayer() async {
     assert(_player == null);
+    // 冷启动优化 S-02：libmpv 改在首帧后预热，创建播放器前必须确保已加载
+    ensureMediaKitInitialized();
     final player = await Player.create();
     _videoController = await VideoController.create(player);
     if (!mounted) {
