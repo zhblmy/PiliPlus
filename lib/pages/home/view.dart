@@ -47,40 +47,35 @@ class _HomePageState extends CommonPageState<HomePage>
     final bool showAppBar =
         !_mainController.useSideBar && MediaQuery.sizeOf(context).isPortrait;
     final bool hasTabBar = _homeController.tabs.length > 1;
-    // 分类 Tab 区域的高度：4 的顶部间距 + 栏高（`Style.tabBarHeight`）
-    const double tabAreaHeight = 4 + Style.tabBarHeight;
 
     Widget tabBar;
     if (hasTabBar) {
-      tabBar = Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: SizedBox(
-          height: Style.tabBarHeight,
-          width: double.infinity,
-          child: TabBar(
-            controller: _homeController.tabController,
-            tabs: _homeController.tabs.map((e) => Tab(text: e.label)).toList(),
-            isScrollable: true,
-            dividerColor: Colors.transparent,
-            dividerHeight: 0,
-            splashBorderRadius: Style.mdRadius,
-            tabAlignment: TabAlignment.center,
-            // 与 M3 默认指示线（3px、圆角、primary 色）一致，只把下划线上移，
-            // 让它与标签文字的距离约缩小一半（42 高的 Tab 栏下约 12 → 约 6）
-            indicator: UnderlineTabIndicator(
-              insets: const EdgeInsets.only(bottom: 6),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(3),
-              ),
-              borderSide: BorderSide(width: 3, color: _colorScheme.primary),
+      tabBar = SizedBox(
+        height: Style.tabBarHeight,
+        width: double.infinity,
+        child: TabBar(
+          controller: _homeController.tabController,
+          tabs: _homeController.tabs.map((e) => Tab(text: e.label)).toList(),
+          isScrollable: true,
+          dividerColor: Colors.transparent,
+          dividerHeight: 0,
+          splashBorderRadius: Style.mdRadius,
+          tabAlignment: TabAlignment.center,
+          // 与 M3 默认指示线（3px、圆角、primary 色）一致，只把下划线上移，
+          // 让它与标签文字的距离约缩小一半（42 高的 Tab 栏下约 12 → 约 6）
+          indicator: UnderlineTabIndicator(
+            insets: const EdgeInsets.only(bottom: 6),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(3),
             ),
-            onTap: (_) {
-              feedBack();
-              if (!_homeController.tabController.indexIsChanging) {
-                _homeController.animateToTop();
-              }
-            },
+            borderSide: BorderSide(width: 3, color: _colorScheme.primary),
           ),
+          onTap: (_) {
+            feedBack();
+            if (!_homeController.tabController.indexIsChanging) {
+              _homeController.animateToTop();
+            }
+          },
         ),
       );
     } else {
@@ -114,7 +109,10 @@ class _HomePageState extends CommonPageState<HomePage>
     // 列表内容不再被挤在它下面，而是从它下方穿过并被模糊。
     Widget glassTopBar() {
       final (appBar, appBarHeight) = _appBarArea();
-      final double inset = appBarHeight + (hasTabBar ? tabAreaHeight : 6.0);
+      // 分类 Tab 区就是 42 的栏高本身（不再额外垫 4 的间距），
+      // 这样它离上面那行搜索框/头像更近，整个顶栏也更矮
+      final double inset =
+          appBarHeight + (hasTabBar ? Style.tabBarHeight : 6.0);
       final bool isDark = _colorScheme.isDark;
       return Stack(
         children: [
