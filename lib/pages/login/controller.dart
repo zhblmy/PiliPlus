@@ -10,6 +10,7 @@ import 'package:PiliPlus/http/login.dart';
 import 'package:PiliPlus/models/common/account_type.dart';
 import 'package:PiliPlus/models/login/model.dart';
 import 'package:PiliPlus/pages/login/geetest/geetest_webview_dialog.dart';
+import 'package:PiliPlus/services/app_visibility.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/accounts/account.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
@@ -48,15 +49,26 @@ class LoginPageController extends GetxController
 
   bool _isReq = false;
 
+  /// 防止「应用短时间内反复切前后台」时并发多次申请二维码
+  /// （并发进入会在 await 之后各建一个定时器，多出来的那个不会被取消）
+  bool _isRefreshingQr = false;
+
   @override
   void onInit() {
     super.onInit();
     tabController = TabController(length: 4, vsync: this)
       ..addListener(_handleTabChange);
+    // B-06：应用不可见时停掉二维码 1 秒轮询（回前台仍在二维码页则重新获取）
+    AppVisibility.register(
+      this,
+      onPause: _onAppInvisible,
+      onResume: _onAppVisible,
+    );
   }
 
   @override
   void onClose() {
+    AppVisibility.unregister(this);
     tabController
       ..removeListener(_handleTabChange)
       ..dispose();
@@ -71,40 +83,46 @@ class LoginPageController extends GetxController
   }
 
   Future<void> refreshQRCode() async {
-    final res = await LoginHttp.getHDcode();
-    if (res case Success(:final response)) {
-      qrCodeTimer?.cancel();
-      codeInfo.value = res;
-      qrCodeTimer = Timer.periodic(const Duration(milliseconds: 1000), (t) {
-        final left = 180 - t.tick;
-        if (left <= 0) {
-          t.cancel();
-          statusQRCode.value = '二维码已过期，请刷新';
-          qrCodeLeftTime.value = 0;
-          return;
-        }
-        qrCodeLeftTime.value = left;
-        if (_isReq || tabController.index != 2) return;
-
-        _isReq = true;
-        LoginHttp.codePoll(response.authCode).then((value) async {
-          _isReq = false;
-          if (value['status']) {
+    if (_isRefreshingQr) return;
+    _isRefreshingQr = true;
+    try {
+      final res = await LoginHttp.getHDcode();
+      if (res case Success(:final response)) {
+        qrCodeTimer?.cancel();
+        codeInfo.value = res;
+        qrCodeTimer = Timer.periodic(const Duration(milliseconds: 1000), (t) {
+          final left = 180 - t.tick;
+          if (left <= 0) {
             t.cancel();
-            statusQRCode.value = '扫码成功';
-            await setAccount(
-              value['data'],
-              value['data']['cookie_info']['cookies'],
-            );
-            Get.back();
-          } else if (value['code'] == 86038) {
-            t.cancel();
+            statusQRCode.value = '二维码已过期，请刷新';
             qrCodeLeftTime.value = 0;
-          } else {
-            statusQRCode.value = value['msg'];
+            return;
           }
+          qrCodeLeftTime.value = left;
+          if (_isReq || tabController.index != 2) return;
+
+          _isReq = true;
+          LoginHttp.codePoll(response.authCode).then((value) async {
+            _isReq = false;
+            if (value['status']) {
+              t.cancel();
+              statusQRCode.value = '扫码成功';
+              await setAccount(
+                value['data'],
+                value['data']['cookie_info']['cookies'],
+              );
+              Get.back();
+            } else if (value['code'] == 86038) {
+              t.cancel();
+              qrCodeLeftTime.value = 0;
+            } else {
+              statusQRCode.value = value['msg'];
+            }
+          });
         });
-      });
+      }
+    } finally {
+      _isRefreshingQr = false;
     }
   }
 
@@ -113,6 +131,16 @@ class LoginPageController extends GetxController
       if (qrCodeTimer == null || !qrCodeTimer!.isActive) {
         refreshQRCode();
       }
+    }
+  }
+
+  /// B-06：后台时不再每秒向后端轮询扫码状态
+  void _onAppInvisible() => qrCodeTimer?.cancel();
+
+  void _onAppVisible() {
+    if (tabController.index == 2 &&
+        (qrCodeTimer == null || !qrCodeTimer!.isActive)) {
+      refreshQRCode();
     }
   }
 

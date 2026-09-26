@@ -33,6 +33,7 @@ import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/danmaku_options.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/plugin/pl_player/view/view.dart';
+import 'package:PiliPlus/services/app_visibility.dart';
 import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -93,6 +94,13 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     if (plPlayerController.removeSafeArea) {
       hideSystemBar();
     }
+    // L-02：应用不可见即断开直播消息长连接（否则炋屏后仍在后台收消息 + 每 30s 心跳），
+    // 回到前台且仍在播放时重连。
+    AppVisibility.register(
+      this,
+      onPause: _liveRoomController.closeLiveMsg,
+      onResume: _onAppVisible,
+    );
   }
 
   @override
@@ -117,6 +125,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
   @override
   void didPopNext() {
     addObserverMobile(this);
+    AppVisibility.setActive(this, true);
     // playerInit / 恢复弹幕都很重，等返回转场播完再跑
     // （转场收尾那一帧整页会首次实时绘制，别和它抢帧）
     runAfterRouteAnimation(_resumeOnPopNext);
@@ -153,6 +162,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
   @override
   void didPushNext() {
     removeObserverMobile(this);
+    AppVisibility.setActive(this, false);
     plPlayerController.removeStatusLister(playerListener);
     _liveRoomController
       ..danmakuController?.clear()
@@ -176,8 +186,19 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     }
   }
 
+  /// L-02：回到前台重连长连接。后台期间弹幕服务器 token 可能已过期，
+  /// 清掉 dmInfo 让 startLiveMsg 重新申请一次。
+  void _onAppVisible() {
+    if (plPlayerController.playerStatus.isPlaying) {
+      _liveRoomController
+        ..dmInfo = null
+        ..startLiveMsg();
+    }
+  }
+
   @override
   void dispose() {
+    AppVisibility.unregister(this);
     removeObserverMobile(this);
     videoPlayerServiceHandler?.onVideoDetailDispose(heroTag);
     if (Platform.isAndroid && !plPlayerController.setSystemBrightness) {

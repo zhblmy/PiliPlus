@@ -12,6 +12,7 @@ import 'package:PiliPlus/models/common/theme/theme_color_type.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/router/app_pages.dart';
 import 'package:PiliPlus/services/account_service.dart';
+import 'package:PiliPlus/services/app_visibility.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
 import 'package:PiliPlus/services/logger.dart';
 import 'package:PiliPlus/services/power_save_watcher.dart';
@@ -145,6 +146,8 @@ void main() async {
   HttpOverrides.global = _CustomHttpOverrides();
 
   if (PlatformUtils.isMobile) {
+    // PF-03：应用可见性统一门控（内部仅在 Android 注册生命周期观察者）
+    AppVisibility.ensureInitialized();
     if (Platform.isAndroid) MaxScreenSize.init();
     // 冷启动优化 S-01：音频服务改为「同步发起、不等待」——冷启动关键路径上少一次
     // MethodChannel 往返 + 前台服务创建的等待。在应用可见时发起，该前台服务依旧

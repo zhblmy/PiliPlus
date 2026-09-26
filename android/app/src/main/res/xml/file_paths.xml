@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内私有目录 → content:// URI 的映射（A17-05）。
+
+  · Android 7.0 起不允许把 file:// URI 交给其它应用（FileUriExposedException）；
+  · Android 18 起隐式 URI 授权（ACTION_SEND / ACTION_IMAGE_CAPTURE 等）不再自动生效。
+
+  因此把应用内的文件交给其它应用时，统一走 ${applicationId}.fileprovider 生成
+  content:// URI，并显式加 FLAG_GRANT_READ_URI_PERMISSION（应用内更新的安装包同理）。
+-->
+<paths>
+    <!-- 应用缓存目录：下载/转码/导出的临时文件、应用内更新安装包 -->
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <!-- 应用私有文件目录 -->
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+</paths>

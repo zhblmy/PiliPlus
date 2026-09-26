@@ -118,6 +118,18 @@ class LiveRoomController extends GetxController {
   bool autoScroll = true;
   LiveMessageStream? _msgStream;
 
+  /// 正在申请弹幕服务器 token（避免重复建流：多一条 WSS 会一直在后台耗电）
+  bool _dmConnecting = false;
+
+  /// 长连接代次：closeLiveMsg 会自增，用于作废仍在飞行中的 token 请求与重试
+  int _dmGeneration = 0;
+
+  /// token 申请失败后的退避重试（弱网 / 刚回前台时常见，次数有限）
+  static const int _dmMaxRetry = 3;
+  static const Duration _dmRetryDelay = Duration(seconds: 3);
+  Timer? _dmRetryTimer;
+  int _dmRetryCount = 0;
+
   List<String> _keywordList = const [];
   Set<int> _shieldUids = const {};
 
@@ -412,6 +424,11 @@ class LiveRoomController extends GetxController {
   }
 
   void closeLiveMsg() {
+    // 作废仍在飞行中的 token 请求，否则它回来后会又建一条长连接（应用已经在后台）
+    _dmGeneration++;
+    _dmRetryTimer?.cancel();
+    _dmRetryTimer = null;
+    _dmRetryCount = 0;
     _msgStream?.close();
     _msgStream = null;
   }
@@ -472,17 +489,39 @@ class LiveRoomController extends GetxController {
         getSuperChatMsg();
       }
     }
-    if (_msgStream != null) {
+    if (_msgStream != null || _dmConnecting) {
       return;
     }
     if (dmInfo != null) {
       initDm(dmInfo!);
       return;
     }
-    LiveHttp.liveRoomGetDanmakuToken(roomId: roomId).then((res) {
-      if (res case Success(:final response)) {
-        initDm(dmInfo = response);
-      }
+    _dmConnecting = true;
+    final generation = _dmGeneration;
+    LiveHttp.liveRoomGetDanmakuToken(roomId: roomId)
+        .then((res) {
+          if (generation != _dmGeneration) return;
+          if (res case Success(:final response)) {
+            _dmRetryCount = 0;
+            initDm(dmInfo = response);
+          } else {
+            _scheduleDmRetry(generation);
+          }
+        })
+        .whenComplete(() => _dmConnecting = false);
+  }
+
+  /// 申请 token 失败时退避重试（否则弹幕会一直不恢复，而长连接本身没有自动重连）
+  void _scheduleDmRetry(int generation) {
+    if (generation != _dmGeneration || _dmRetryCount >= _dmMaxRetry) {
+      return;
+    }
+    _dmRetryCount++;
+    _dmRetryTimer?.cancel();
+    _dmRetryTimer = Timer(_dmRetryDelay, () {
+      _dmRetryTimer = null;
+      if (generation != _dmGeneration) return;
+      startLiveMsg();
     });
   }
 

@@ -7,7 +7,8 @@
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:windowSplashScreenBackground">#212121</item>
+        <!-- MI-06：纯黑启动图。AMOLED 上黑像素不发光，冷启动那一下不再先闪一块灰 -->
+        <item name="android:windowSplashScreenBackground">#000000</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your

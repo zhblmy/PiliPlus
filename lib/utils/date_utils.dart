@@ -8,7 +8,40 @@ abstract final class DateFormatUtils {
   static final longFormatDs = DateFormat('yyyy-MM-dd HH:mm:ss');
   static final only0_9 = DateFormat('yyyyMMddHHmmss');
 
+  // U-08：相对时间在列表里会被「每一项、每一次 build」重算。这里按当前分钟整体失效地
+  // 做一层结果缓存，省掉重复的 DateTime 运算与字符串拼接（跨分钟才重算，不会显示过期文案）。
+  static final Map<String, String> _relativeCache = {};
+  static int _relativeCacheMinute = -1;
+
   static String dateFormat(
+    int? time, {
+    DateFormat? short,
+    DateFormat? long,
+  }) {
+    if (time == null || time == 0) {
+      return '';
+    }
+
+    final minute = DateTime.now().millisecondsSinceEpoch ~/ 60000;
+    if (minute != _relativeCacheMinute) {
+      _relativeCacheMinute = minute;
+      _relativeCache.clear();
+    }
+    final key = '$time|${short?.pattern}|${long?.pattern}';
+    final cached = _relativeCache[key];
+    if (cached != null) {
+      return cached;
+    }
+    final result = _dateFormat(time, short: short, long: long);
+    // 防御性上限：极端情况下（同一分钟内出现大量不同时间戳）不让缓存无限增长
+    if (_relativeCache.length >= 512) {
+      _relativeCache.clear();
+    }
+    _relativeCache[key] = result;
+    return result;
+  }
+
+  static String _dateFormat(
     int? time, {
     DateFormat? short,
     DateFormat? long,

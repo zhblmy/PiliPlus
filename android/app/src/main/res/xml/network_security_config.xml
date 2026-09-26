@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 17（API 37，targetSdk 37）起：证书透明度（CT）默认开启、ECH 默认启用，
+  且 android:usesCleartextTraffic 有弃用计划。这里把网络安全策略显式化，便于排查与演进。
+
+  默认值与 targetSdk 37 的系统默认一致（禁止明文），因此不改变现有行为：
+  Dart 侧的 dio / HttpClient 使用自带 socket 实现，不受本文件约束；本文件只作用于
+  WebView 等原生网络栈，而其默认行为本来也是禁止明文。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!--
+      排障样例（默认不启用；元素名以官方文档为准，只对出问题的域放开，不要全局改）：
+      · 某域证书链缺少 SCT，CT 校验失败：
+        <domain-config>
+            <domain includeSubdomains="true">example.com</domain>
+            <domain-encryption>disabled</domain-encryption>
+        </domain-config>
+      · 某域确实需要明文（自建镜像、局域网服务）：
+        <domain-config cleartextTrafficPermitted="true">
+            <domain includeSubdomains="true">example.com</domain>
+        </domain-config>
+    -->
+</network-security-config>

@@ -434,6 +434,11 @@ public final class AndroidHelper {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // A17-05：Android 18 起隐式 URI 授权不再自动生效。content:// 交给其它应用时
+            // 必须显式声明读授权，否则接收方打不开（http/https 无此问题）。
+            if ("content".equals(intent.getData().getScheme())) {
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
 
             ArrayList<Intent> external = new ArrayList<>();
             for (ResolveInfo info : pm.queryIntentActivities(intent, 0)) {

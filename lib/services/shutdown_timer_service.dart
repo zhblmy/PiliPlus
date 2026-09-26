@@ -6,6 +6,7 @@ import 'dart:io' show exit;
 import 'package:PiliPlus/models/common/enum_with_label.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/widgets/menu_row.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
+import 'package:PiliPlus/services/app_visibility.dart';
 import 'package:PiliPlus/utils/duration_utils.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
@@ -404,6 +405,8 @@ mixin ShutdownMixin<T extends StatefulWidget> on State<T> {
   void initState() {
     super.initState();
     _startTimer();
+    // B-07：应用不可见时停掉 1 秒倒计时（剩余时间每次都由绝对 deadline 重算，不会走偏）
+    AppVisibility.register(this, onPause: _stopTimer, onResume: _startTimer);
   }
 
   void _updateCountdownTextEnd([String? value]) {
@@ -449,6 +452,7 @@ mixin ShutdownMixin<T extends StatefulWidget> on State<T> {
 
   @override
   void dispose() {
+    AppVisibility.unregister(this);
     _stopTimer();
     super.dispose();
   }
