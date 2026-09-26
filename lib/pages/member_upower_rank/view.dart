@@ -5,6 +5,7 @@ import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/image_type.dart';
@@ -117,33 +118,39 @@ class _UpowerRankPageState extends State<UpowerRankPage>
                         builder: (context) {
                           return Column(
                             children: [
-                              TabBar(
-                                isScrollable: true,
-                                tabAlignment: TabAlignment.start,
-                                tabs: tabs
-                                    .map(
-                                      (e) => Tab(
-                                        text:
-                                            '${e.name!}(${e.memberTotal ?? 0})',
-                                      ),
-                                    )
-                                    .toList(),
-                                onTap: (index) {
-                                  if (!DefaultTabController.of(
-                                    context,
-                                  ).indexIsChanging) {
-                                    try {
-                                      if (index == 0) {
-                                        _controller.animateToTop();
-                                      } else {
-                                        Get.find<UpowerRankController>(
-                                          tag:
-                                              '$_upMid${tabs[index].privilegeType}',
-                                        ).animateToTop();
-                                      }
-                                    } catch (_) {}
-                                  }
-                                },
+                              SizedBox(
+                                height: Style.tabBarHeight,
+                                child: TabBar(
+                                  indicator: Style.tabIndicator(
+                                    ColorScheme.of(context).primary,
+                                  ),
+                                  isScrollable: true,
+                                  tabAlignment: TabAlignment.start,
+                                  tabs: tabs
+                                      .map(
+                                        (e) => Tab(
+                                          text:
+                                              '${e.name!}(${e.memberTotal ?? 0})',
+                                        ),
+                                      )
+                                      .toList(),
+                                  onTap: (index) {
+                                    if (!DefaultTabController.of(
+                                      context,
+                                    ).indexIsChanging) {
+                                      try {
+                                        if (index == 0) {
+                                          _controller.animateToTop();
+                                        } else {
+                                          Get.find<UpowerRankController>(
+                                            tag:
+                                                '$_upMid${tabs[index].privilegeType}',
+                                          ).animateToTop();
+                                        }
+                                      } catch (_) {}
+                                    }
+                                  },
+                                ),
                               ),
                               Expanded(
                                 child: tabBarView(

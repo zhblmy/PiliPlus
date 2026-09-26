@@ -33,7 +33,9 @@ import 'package:window_manager/window_manager.dart';
 const _kBottomNavShape = RoundedRectangleBorder(
   borderRadius: .vertical(top: .circular(18)),
 );
-const _kBottomNavBlur = 16.0;
+
+/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”
+const _kBottomNavBlur = 28.0;
 
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
@@ -352,11 +354,18 @@ class _MainAppState extends PopScopeState<MainApp>
         bottomNav = LiquidGlass(
           shape: _kBottomNavShape,
           blur: _kBottomNavBlur,
+          // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
           color: _colorScheme.surfaceContainer.withValues(
-            alpha: _colorScheme.isDark ? 0.5 : 0.6,
+            alpha: _colorScheme.isDark ? 0.46 : 0.36,
           ),
+          highlightColor: Colors.white,
+          // 左上亮、右下渐隐的高光边
+          highlightGradient: _colorScheme.isDark
+              ? kGlassRimGradientDark
+              : kGlassRimGradient,
+          borderWidth: 1.2,
           shadowColor: Colors.black.withValues(
-            alpha: _colorScheme.isDark ? 0.4 : 0.12,
+            alpha: _colorScheme.isDark ? 0.35 : 0.12,
           ),
           child: Obx(
             () => NavigationBar(
@@ -384,11 +393,18 @@ class _MainAppState extends PopScopeState<MainApp>
         bottomNav = LiquidGlass(
           shape: _kBottomNavShape,
           blur: _kBottomNavBlur,
+          // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
           color: _colorScheme.surfaceContainer.withValues(
-            alpha: _colorScheme.isDark ? 0.5 : 0.6,
+            alpha: _colorScheme.isDark ? 0.46 : 0.36,
           ),
+          highlightColor: Colors.white,
+          // 左上亮、右下渐隐的高光边
+          highlightGradient: _colorScheme.isDark
+              ? kGlassRimGradientDark
+              : kGlassRimGradient,
+          borderWidth: 1.2,
           shadowColor: Colors.black.withValues(
-            alpha: _colorScheme.isDark ? 0.4 : 0.12,
+            alpha: _colorScheme.isDark ? 0.35 : 0.12,
           ),
           child: Obx(
             () => BottomNavigationBar(
@@ -512,7 +528,7 @@ class _MainAppState extends PopScopeState<MainApp>
   @override
   Widget build(BuildContext context) {
     // 竖屏底栏模式下 body 铺满全屏（含状态栏），状态栏那片交给页面自己：
-    // 首页是盖住状态栏的玻璃顶栏，其它页面补一个顶部内边距。
+    // 首页、动态页是盖住状态栏的玻璃顶栏，其它页面补一个顶部内边距。
     // 两种模式下都包一层 Padding（为 0 时无副作用），这样横竖屏切换时
     // 页面的 element 不会被重建、状态不会丢。
     final bool useBottomNav = _mainController.useBottomNav;
@@ -520,7 +536,10 @@ class _MainAppState extends PopScopeState<MainApp>
         ? .only(top: _padding.top)
         : EdgeInsets.zero;
     Widget pageOf(NavigationBarType type) => Padding(
-      padding: type == .home ? EdgeInsets.zero : pagePadding,
+      padding: switch (type) {
+        .home || .dynamics => EdgeInsets.zero,
+        _ => pagePadding,
+      },
       child: type.page,
     );
 

@@ -1,6 +1,7 @@
 import 'package:PiliPlus/common/widgets/button/icon_button.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/image_type.dart';
@@ -80,25 +81,33 @@ class _LiveAreaDetailPageState extends State<LiveAreaDetailPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: TabBar(
-                          dividerHeight: 0,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.start,
-                          dividerColor: Colors.transparent,
-                          controller: _controller.tabController,
-                          tabs: response
-                              .map((e) => Tab(text: e.name ?? ''))
-                              .toList(),
-                          onTap: (index) {
-                            try {
-                              if (!_controller.tabController!.indexIsChanging) {
-                                final item = response[index];
-                                Get.find<LiveAreaChildController>(
-                                  tag: '${item.id}${item.parentId}',
-                                ).animateToTop();
-                              }
-                            } catch (_) {}
-                          },
+                        child: SizedBox(
+                          height: Style.tabBarHeight,
+                          child: TabBar(
+                            indicator: Style.tabIndicator(
+                              ColorScheme.of(context).primary,
+                            ),
+                            dividerHeight: 0,
+                            isScrollable: true,
+                            tabAlignment: TabAlignment.start,
+                            dividerColor: Colors.transparent,
+                            controller: _controller.tabController,
+                            tabs: response
+                                .map((e) => Tab(text: e.name ?? ''))
+                                .toList(),
+                            onTap: (index) {
+                              try {
+                                if (!_controller
+                                    .tabController!
+                                    .indexIsChanging) {
+                                  final item = response[index];
+                                  Get.find<LiveAreaChildController>(
+                                    tag: '${item.id}${item.parentId}',
+                                  ).animateToTop();
+                                }
+                              } catch (_) {}
+                            },
+                          ),
                         ),
                       ),
                       iconButton(

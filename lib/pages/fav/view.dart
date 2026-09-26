@@ -1,4 +1,5 @@
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_safe_area.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -130,33 +131,39 @@ class _FavPageState extends State<FavPage> with SingleTickerProviderStateMixin {
       body: ViewSafeArea(
         child: Column(
           children: [
-            TabBar(
-              controller: _tabController,
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              tabs: FavTabType.values
-                  .map((item) => Tab(text: item.title))
-                  .toList(),
-              onTap: (index) {
-                try {
-                  if (!_tabController.indexIsChanging) {
-                    switch (FavTabType.values[index]) {
-                      case FavTabType.video:
-                        _favController.scrollController.animToTop();
-                      case FavTabType.article:
-                        Get.find<FavArticleController>().scrollController
-                            .animToTop();
-                      case FavTabType.topic:
-                        Get.find<FavTopicController>().scrollController
-                            .animToTop();
-                      case FavTabType.cheese:
-                        Get.find<FavCheeseController>().scrollController
-                            .animToTop();
-                      default:
+            SizedBox(
+              height: Style.tabBarHeight,
+              child: TabBar(
+                indicator: Style.tabIndicator(
+                  ColorScheme.of(context).primary,
+                ),
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: FavTabType.values
+                    .map((item) => Tab(text: item.title))
+                    .toList(),
+                onTap: (index) {
+                  try {
+                    if (!_tabController.indexIsChanging) {
+                      switch (FavTabType.values[index]) {
+                        case FavTabType.video:
+                          _favController.scrollController.animToTop();
+                        case FavTabType.article:
+                          Get.find<FavArticleController>().scrollController
+                              .animToTop();
+                        case FavTabType.topic:
+                          Get.find<FavTopicController>().scrollController
+                              .animToTop();
+                        case FavTabType.cheese:
+                          Get.find<FavCheeseController>().scrollController
+                              .animToTop();
+                        default:
+                      }
                     }
-                  }
-                } catch (_) {}
-              },
+                  } catch (_) {}
+                },
+              ),
             ),
             Expanded(
               child: tabBarView(

@@ -2,6 +2,7 @@ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/models_new/live/live_dm_block/shield_user_list.dart';
 import 'package:PiliPlus/pages/live_dm_block/controller.dart';
@@ -29,12 +30,16 @@ class _LiveDmBlockPageState extends State<LiveDmBlockPage> {
   @override
   Widget build(BuildContext context) {
     padding = MediaQuery.viewPaddingOf(context);
-    Widget tabBar = TabBar(
-      controller: _controller.tabController,
-      tabs: const [
-        Tab(text: '关键词'),
-        Tab(text: '用户'),
-      ],
+    Widget tabBar = SizedBox(
+      height: Style.tabBarHeight,
+      child: TabBar(
+        indicator: Style.tabIndicator(ColorScheme.of(context).primary),
+        controller: _controller.tabController,
+        tabs: const [
+          Tab(text: '关键词'),
+          Tab(text: '用户'),
+        ],
+      ),
     );
 
     Widget view = tabBarView(

@@ -2,6 +2,7 @@ import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_sliver_safe_area.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -54,8 +55,9 @@ class _ContributionRankPanelState extends State<ContributionRankPanel>
     return Column(
       children: [
         SizedBox(
-          height: 45,
+          height: Style.tabBarHeight,
           child: TabBar(
+            indicator: Style.tabIndicator(ColorScheme.of(context).primary),
             controller: _tabController,
             tabs: LiveContributionRankType.values
                 .map((e) => Tab(text: e.title))

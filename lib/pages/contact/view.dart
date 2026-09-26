@@ -1,4 +1,5 @@
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/pages/fan/view.dart';
 import 'package:PiliPlus/pages/follow/child/child_view.dart';
@@ -65,12 +66,16 @@ class _ContactPageState extends State<ContactPage>
       ),
       body: Column(
         children: [
-          TabBar(
-            controller: _controller,
-            tabs: const [
-              Tab(text: '我的关注'),
-              Tab(text: '我的粉丝'),
-            ],
+          SizedBox(
+            height: Style.tabBarHeight,
+            child: TabBar(
+              indicator: Style.tabIndicator(ColorScheme.of(context).primary),
+              controller: _controller,
+              tabs: const [
+                Tab(text: '我的关注'),
+                Tab(text: '我的粉丝'),
+              ],
+            ),
           ),
           Expanded(
             child: tabBarView(

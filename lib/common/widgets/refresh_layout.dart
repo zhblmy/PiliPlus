@@ -49,9 +49,12 @@ class RefreshLayout
     super.updateRenderObject(context, renderObject);
     final topOffset = TopBarInset.of(context);
     if (renderObject.topOffset != topOffset) {
-      renderObject
-        ..topOffset = topOffset
-        ..markNeedsLayout();
+      renderObject.topOffset = topOffset;
+      // 转圈不可见时（没在下拉/刷新）不必为顶栏高度的变化重排一次：
+      // 滚动期顶栏每帧都在变，那等于每帧白多一次布局
+      if (renderObject.isIndicatorVisible) {
+        renderObject.markNeedsLayout();
+      }
     }
   }
 }
@@ -73,6 +76,9 @@ class RenderRefreshLayout extends RenderBox
 
   /// 视口顶部被悬浮的玻璃顶栏盖住时，转圈要往下让开的距离
   double topOffset;
+
+  /// 转圈是否可见（下拉/刷新中）。不可见时 [topOffset] 的变化不需要重排。
+  bool get isIndicatorVisible => _heightFactor != 0 || _scaleFactor != 0;
 
   double _heightFactor = 0;
   double get heightFactor => _heightFactor;

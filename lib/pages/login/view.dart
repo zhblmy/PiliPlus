@@ -3,6 +3,7 @@ import 'package:PiliPlus/common/dial_prefix.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_insets_safe_area.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -572,6 +573,8 @@ class _LoginPageState extends State<LoginPage> {
         children: [
           if (!isLandscape)
             TabBar(
+              // 图标+文字的 Tab 需要 74 高（42 会裁掉图标），所以只上移下划线
+              indicator: Style.tabIndicator(ColorScheme.of(context).primary),
               tabs: const [
                 Tab(icon: Icon(Icons.password), text: '密码'),
                 Tab(icon: Icon(Icons.sms_outlined), text: '短信'),

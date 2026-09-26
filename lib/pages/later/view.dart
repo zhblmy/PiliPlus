@@ -2,6 +2,7 @@ import 'package:PiliPlus/common/widgets/appbar/appbar.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/gesture/horizontal_drag_gesture_recognizer.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart'
     show tabBarScrollPhysics;
 import 'package:PiliPlus/common/widgets/view_safe_area.dart';
@@ -113,23 +114,29 @@ class _LaterPageState extends State<LaterPage>
             body: ViewSafeArea(
               child: Column(
                 children: [
-                  TabBar(
-                    // isScrollable: true,
-                    // tabAlignment: TabAlignment.start,
-                    controller: _tabController,
-                    tabs: LaterViewType.values.map((item) {
-                      final count = _baseCtr.counts[item.index];
-                      return Tab(
-                        text: '${item.title}${count != -1 ? '($count)' : ''}',
-                      );
-                    }).toList(),
-                    onTap: (_) {
-                      if (!_tabController.indexIsChanging) {
-                        currCtr().scrollController.animToTop();
-                      } else if (enableMultiSelect) {
-                        currCtr(_tabController.previousIndex).handleSelect();
-                      }
-                    },
+                  SizedBox(
+                    height: Style.tabBarHeight,
+                    child: TabBar(
+                      indicator: Style.tabIndicator(
+                        ColorScheme.of(context).primary,
+                      ),
+                      // isScrollable: true,
+                      // tabAlignment: TabAlignment.start,
+                      controller: _tabController,
+                      tabs: LaterViewType.values.map((item) {
+                        final count = _baseCtr.counts[item.index];
+                        return Tab(
+                          text: '${item.title}${count != -1 ? '($count)' : ''}',
+                        );
+                      }).toList(),
+                      onTap: (_) {
+                        if (!_tabController.indexIsChanging) {
+                          currCtr().scrollController.animToTop();
+                        } else if (enableMultiSelect) {
+                          currCtr(_tabController.previousIndex).handleSelect();
+                        }
+                      },
+                    ),
                   ),
                   Expanded(
                     child: TabBarView(

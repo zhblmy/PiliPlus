@@ -1325,11 +1325,18 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         labelPadding: .zero,
         dividerColor: Colors.transparent,
         controller: videoDetailController.tabCtr,
-        indicator: flag ? const BoxDecoration() : null,
+        indicator: flag
+            ? const BoxDecoration()
+            : UnderlineTabIndicator(
+                // 与首页分类 Tab 栏一致：M3 默认指示线（3px、圆角、primary 色），
+                // 只把下划线上移，让它与标签文字的距离和首页一致（约 12 → 约 6）
+                insets: const EdgeInsets.only(bottom: 6),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(3),
+                ),
+                borderSide: BorderSide(width: 3, color: colorScheme.primary),
+              ),
         labelColor: flag ? colorScheme.onSurface : null,
-        labelStyle:
-            TabBarTheme.of(context).labelStyle?.copyWith(fontSize: 13) ??
-            const TextStyle(fontSize: 13),
         onTap: (value) {
           void animToTop() {
             if (onTap != null) {
@@ -1382,7 +1389,8 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         ),
       ),
       child: SizedBox(
-        height: 45,
+        // 与首页分类 Tab 栏一致：42 高（文字垂直居中，下划线上移后空隙约 6）
+        height: Style.tabBarHeight,
         child: Row(
           children: [
             if (tabs.isEmpty)

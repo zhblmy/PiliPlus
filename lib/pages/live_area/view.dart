@@ -3,6 +3,7 @@ import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/image_type.dart';
@@ -83,11 +84,17 @@ class _LiveAreaPageState extends State<LiveAreaPage> {
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TabBar(
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    controller: _controller.tabController,
-                    tabs: response.map((e) => Tab(text: e.name)).toList(),
+                  SizedBox(
+                    height: Style.tabBarHeight,
+                    child: TabBar(
+                      indicator: Style.tabIndicator(
+                        ColorScheme.of(context).primary,
+                      ),
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      controller: _controller.tabController,
+                      tabs: response.map((e) => Tab(text: e.name)).toList(),
+                    ),
                   ),
                   Expanded(
                     child: tabBarView(

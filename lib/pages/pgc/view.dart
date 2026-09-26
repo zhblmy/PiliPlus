@@ -261,21 +261,27 @@ class _PgcPageState extends State<PgcPage> with AutomaticKeepAliveClientMixin {
                           return Column(
                             children: [
                               ViewSafeArea(
-                                child: TabBar(
-                                  tabs: titles
-                                      .map((title) => Tab(text: title))
-                                      .toList(),
-                                  onTap: (index) {
-                                    try {
-                                      if (!DefaultTabController.of(
-                                        context,
-                                      ).indexIsChanging) {
-                                        Get.find<PgcIndexController>(
-                                          tag: types[index].toString(),
-                                        ).animateToTop();
-                                      }
-                                    } catch (_) {}
-                                  },
+                                child: SizedBox(
+                                  height: Style.tabBarHeight,
+                                  child: TabBar(
+                                    indicator: Style.tabIndicator(
+                                      ColorScheme.of(context).primary,
+                                    ),
+                                    tabs: titles
+                                        .map((title) => Tab(text: title))
+                                        .toList(),
+                                    onTap: (index) {
+                                      try {
+                                        if (!DefaultTabController.of(
+                                          context,
+                                        ).indexIsChanging) {
+                                          Get.find<PgcIndexController>(
+                                            tag: types[index].toString(),
+                                          ).animateToTop();
+                                        }
+                                      } catch (_) {}
+                                    },
+                                  ),
                                 ),
                               ),
                               Expanded(

@@ -4,6 +4,7 @@ import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
 import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
+import 'package:PiliPlus/common/widgets/scroll_behavior.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_v.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/rcmd/controller.dart';
@@ -36,19 +37,28 @@ class _RcmdPageState extends State<RcmdPage>
       decoration: const BoxDecoration(borderRadius: Style.mdRadius),
       child: refreshIndicator(
         onRefresh: controller.onRefresh,
-        child: CustomScrollView(
-          controller: controller.scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // 为首页的液体玻璃顶栏让出空间
-            const TopBarInsetSpacer(),
-            SliverPadding(
-              padding: const .only(top: Style.cardSpace, bottom: 100),
-              sliver: Obx(
-                () => _buildBody(colorScheme, controller.loadingState.value),
-              ),
+        // BouncingScrollPhysics 自己就会“弹”，别再叠加 Android 的拉伸指示器
+        child: ScrollConfiguration(
+          behavior: const NoOverscrollIndicator(),
+          child: CustomScrollView(
+            controller: controller.scrollController,
+            // iOS/小米那种带阻尼的回弹与惯性，比 Android 默认的“夹紧 + 拉伸”更顺滑跟手
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-          ],
+            // 预渲染约一屏：避免新的一行刚进视口才开始构建/取图造成的掉帧
+            cacheExtent: 1200,
+            slivers: [
+              // 为首页的液体玻璃顶栏让出空间
+              const TopBarInsetSpacer(),
+              SliverPadding(
+                padding: const .only(top: Style.cardSpace, bottom: 100),
+                sliver: Obx(
+                  () => _buildBody(colorScheme, controller.loadingState.value),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

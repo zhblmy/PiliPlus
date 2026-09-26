@@ -1,5 +1,23 @@
 import 'dart:ui' show BlurStyle, ImageFilter, MaskFilter, PathOperation;
+
 import 'package:material_ui/material_ui.dart';
+
+/// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
+const kGlassTopBarShape = RoundedRectangleBorder();
+
+/// iOS 26 那种玻璃的“高光边”：左上偏亮、右下渐隐
+const kGlassRimGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0x8CFFFFFF), Color(0x14FFFFFF)],
+);
+
+/// [kGlassRimGradient] 的暗色版
+const kGlassRimGradientDark = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0x59FFFFFF), Color(0x0FFFFFFF)],
+);
 
 /// 液体玻璃（Liquid Glass）容器。
 ///
@@ -31,6 +49,7 @@ class LiquidGlass extends StatelessWidget {
     this.blur = 12.0,
     this.color,
     this.highlightColor,
+    this.highlightGradient,
     this.borderWidth = 0.8,
     this.shadowColor,
     this.clipBehavior = Clip.antiAlias,
@@ -50,6 +69,10 @@ class LiquidGlass extends StatelessWidget {
   /// 高光描边颜色，传 `Colors.transparent` 可关闭。
   final Color? highlightColor;
 
+  /// 高光描边的渐变（传了就优先于 [highlightColor] 的纯色）。
+  /// iOS 26 那样的玻璃，描边是“左上亮、右下渐隐”的。
+  final Gradient? highlightGradient;
+
   final double borderWidth;
 
   /// 投影颜色，`null` 表示不绘制阴影。
@@ -68,8 +91,7 @@ class LiquidGlass extends StatelessWidget {
           alpha: isDark ? 0.58 : 0.66,
         );
     final Color highlight =
-        highlightColor ??
-        Colors.white.withValues(alpha: isDark ? 0.12 : 0.42);
+        highlightColor ?? Colors.white.withValues(alpha: isDark ? 0.12 : 0.42);
 
     Widget glass = ClipPath(
       clipper: ShapeBorderClipper(
@@ -95,6 +117,7 @@ class LiquidGlass extends StatelessWidget {
                 painter: _GlassBorderPainter(
                   shape: shape,
                   color: highlight,
+                  gradient: highlightGradient,
                   width: borderWidth,
                 ),
               ),
@@ -136,29 +159,38 @@ class _GlassBorderPainter extends CustomPainter {
   const _GlassBorderPainter({
     required this.shape,
     required this.color,
+    required this.gradient,
     required this.width,
   });
 
   final ShapeBorder shape;
   final Color color;
+
+  /// 描边渐变；为 null 时用 [color] 纯色
+  final Gradient? gradient;
+
   final double width;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawPath(
-      shape.getOuterPath(Offset.zero & size, textDirection: .ltr),
-      Paint()
-        ..style = .stroke
-        ..strokeWidth = width
-        ..color = color
-        ..isAntiAlias = true,
-    );
+    final rect = Offset.zero & size;
+    final gradient = this.gradient;
+    final paint = Paint()
+      ..style = .stroke
+      ..strokeWidth = width
+      ..color = color
+      ..isAntiAlias = true;
+    if (gradient != null) {
+      paint.shader = gradient.createShader(rect);
+    }
+    canvas.drawPath(shape.getOuterPath(rect, textDirection: .ltr), paint);
   }
 
   @override
   bool shouldRepaint(_GlassBorderPainter oldDelegate) =>
       oldDelegate.shape != shape ||
       oldDelegate.color != color ||
+      oldDelegate.gradient != gradient ||
       oldDelegate.width != width;
 }
 

@@ -63,6 +63,18 @@ class _IntroDetailState extends State<PgcIntroPanel>
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   dividerColor: Colors.transparent,
+                  // 与首页分类 Tab 栏一致：只把下划线上移，让“文字到下划线”的空隙相同。
+                  // 首页是 42 高 + 上移 6（空隙 3），默认栏是 48 高（46+2）→ 上移 9。
+                  indicator: UnderlineTabIndicator(
+                    insets: const EdgeInsets.only(bottom: 9),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(3),
+                    ),
+                    borderSide: BorderSide(
+                      width: 3,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
                   tabs: const [
                     Tab(text: '详情'),
                     Tab(text: '点评'),

@@ -15,9 +15,6 @@ import 'package:get/get.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
-const _kTopBarShape = RoundedRectangleBorder();
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -50,15 +47,15 @@ class _HomePageState extends CommonPageState<HomePage>
     final bool showAppBar =
         !_mainController.useSideBar && MediaQuery.sizeOf(context).isPortrait;
     final bool hasTabBar = _homeController.tabs.length > 1;
-    // 分类 Tab 栏的固定高度：4 的顶部间距 + 42
-    const double tabBarHeight = 46.0;
+    // 分类 Tab 区域的高度：4 的顶部间距 + 栏高（`Style.tabBarHeight`）
+    const double tabAreaHeight = 4 + Style.tabBarHeight;
 
     Widget tabBar;
     if (hasTabBar) {
       tabBar = Padding(
         padding: const EdgeInsets.only(top: 4),
         child: SizedBox(
-          height: 42,
+          height: Style.tabBarHeight,
           width: double.infinity,
           child: TabBar(
             controller: _homeController.tabController,
@@ -117,7 +114,7 @@ class _HomePageState extends CommonPageState<HomePage>
     // 列表内容不再被挤在它下面，而是从它下方穿过并被模糊。
     Widget glassTopBar() {
       final (appBar, appBarHeight) = _appBarArea();
-      final double inset = appBarHeight + (hasTabBar ? tabBarHeight : 6.0);
+      final double inset = appBarHeight + (hasTabBar ? tabAreaHeight : 6.0);
       final bool isDark = _colorScheme.isDark;
       return Stack(
         children: [
@@ -127,7 +124,7 @@ class _HomePageState extends CommonPageState<HomePage>
             left: 0,
             right: 0,
             child: LiquidGlass(
-              shape: _kTopBarShape,
+              shape: kGlassTopBarShape,
               blur: 16,
               color: _colorScheme.surface.withValues(
                 alpha: isDark ? 0.5 : 0.62,
@@ -209,7 +206,10 @@ class _HomePageState extends CommonPageState<HomePage>
           const SizedBox(width: 4),
           msgBadge(_mainController),
           const SizedBox(width: 8),
-          userAvatar(colorScheme: _colorScheme, mainController: _mainController),
+          userAvatar(
+            colorScheme: _colorScheme,
+            mainController: _mainController,
+          ),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
 import 'package:PiliPlus/common/widgets/dialog/simple_dialog_option.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_safe_area.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -161,54 +162,60 @@ class _FollowPageState extends State<FollowPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ViewSafeArea(
-            child: TabBar(
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              controller: _followController.tabController,
-              tabs: List.generate(_followController.tabs.length, (index) {
-                return Obx(() {
-                  final item = _followController.tabs[index];
-                  int? count = item.count;
-                  if (BiliUtils.isCustomFollowTag(item.tagid)) {
-                    return GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onLongPress: () {
-                        Feedback.forLongPress(context);
-                        _onHandleTag(index, item);
-                      },
-                      onSecondaryTap: PlatformUtils.isMobile
-                          ? null
-                          : () => _onHandleTag(index, item),
-                      child: Tab(
-                        child: Row(
-                          children: [
-                            Text(
-                              '${item.name}${count != null ? '($count)' : ''} ',
-                            ),
-                            const Icon(Icons.menu, size: 18),
-                          ],
+            child: SizedBox(
+              height: Style.tabBarHeight,
+              child: TabBar(
+                indicator: Style.tabIndicator(
+                  ColorScheme.of(context).primary,
+                ),
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                controller: _followController.tabController,
+                tabs: List.generate(_followController.tabs.length, (index) {
+                  return Obx(() {
+                    final item = _followController.tabs[index];
+                    int? count = item.count;
+                    if (BiliUtils.isCustomFollowTag(item.tagid)) {
+                      return GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onLongPress: () {
+                          Feedback.forLongPress(context);
+                          _onHandleTag(index, item);
+                        },
+                        onSecondaryTap: PlatformUtils.isMobile
+                            ? null
+                            : () => _onHandleTag(index, item),
+                        child: Tab(
+                          child: Row(
+                            children: [
+                              Text(
+                                '${item.name}${count != null ? '($count)' : ''} ',
+                              ),
+                              const Icon(Icons.menu, size: 18),
+                            ],
+                          ),
                         ),
-                      ),
+                      );
+                    }
+                    return Tab(
+                      text: '${item.name}${count != null ? '($count)' : ''}',
                     );
+                  });
+                }),
+                onTap: (value) {
+                  if (!_followController.tabController!.indexIsChanging) {
+                    final item = _followController.tabs[value];
+                    // if (_isCustomTag(item.tagid)) {
+                    //   _onHandleTag(value, item);
+                    // }
+                    try {
+                      Get.find<FollowChildController>(
+                        tag: '$_tag${item.tagid}',
+                      ).animateToTop();
+                    } catch (_) {}
                   }
-                  return Tab(
-                    text: '${item.name}${count != null ? '($count)' : ''}',
-                  );
-                });
-              }),
-              onTap: (value) {
-                if (!_followController.tabController!.indexIsChanging) {
-                  final item = _followController.tabs[value];
-                  // if (_isCustomTag(item.tagid)) {
-                  //   _onHandleTag(value, item);
-                  // }
-                  try {
-                    Get.find<FollowChildController>(
-                      tag: '$_tag${item.tagid}',
-                    ).animateToTop();
-                  } catch (_) {}
-                }
-              },
+                },
+              ),
             ),
           ),
           Expanded(

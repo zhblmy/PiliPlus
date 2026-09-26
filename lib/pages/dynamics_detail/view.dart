@@ -295,9 +295,10 @@ class _DynamicDetailPageState
 
   Widget _buildTabBar() {
     return SizedBox(
-      height: 40,
+      height: Style.tabBarHeight,
       child: DynTabBar(
         padding: .zero,
+        indicator: Style.tabIndicator(theme.colorScheme.primary),
         // isScrollable: true,
         indicatorSize: .tab,
         tabAlignment: .start,

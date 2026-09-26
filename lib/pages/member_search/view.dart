@@ -1,4 +1,5 @@
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_safe_area.dart';
 import 'package:PiliPlus/pages/member_search/child/view.dart';
@@ -65,31 +66,37 @@ class _MemberSearchPageState extends State<MemberSearchPage> {
                 opacity: _controller.hasData.value ? 1 : 0,
                 child: Column(
                   children: [
-                    TabBar(
-                      controller: _controller.tabController,
-                      tabs: [
-                        Obx(
-                          () => Tab(
-                            text:
-                                '视频 ${_controller.counts[0] != -1 ? _controller.counts[0] : ''}',
-                          ),
+                    SizedBox(
+                      height: Style.tabBarHeight,
+                      child: TabBar(
+                        indicator: Style.tabIndicator(
+                          ColorScheme.of(context).primary,
                         ),
-                        Obx(
-                          () => Tab(
-                            text:
-                                '动态 ${_controller.counts[1] != -1 ? _controller.counts[1] : ''}',
+                        controller: _controller.tabController,
+                        tabs: [
+                          Obx(
+                            () => Tab(
+                              text:
+                                  '视频 ${_controller.counts[0] != -1 ? _controller.counts[0] : ''}',
+                            ),
                           ),
-                        ),
-                      ],
-                      onTap: (index) {
-                        if (!_controller.tabController.indexIsChanging) {
-                          if (index == 0) {
-                            _controller.arcCtr.animateToTop();
-                          } else {
-                            _controller.dynCtr.animateToTop();
+                          Obx(
+                            () => Tab(
+                              text:
+                                  '动态 ${_controller.counts[1] != -1 ? _controller.counts[1] : ''}',
+                            ),
+                          ),
+                        ],
+                        onTap: (index) {
+                          if (!_controller.tabController.indexIsChanging) {
+                            if (index == 0) {
+                              _controller.arcCtr.animateToTop();
+                            } else {
+                              _controller.dynCtr.animateToTop();
+                            }
                           }
-                        }
-                      },
+                        },
+                      ),
                     ),
                     Expanded(
                       child: tabBarView(

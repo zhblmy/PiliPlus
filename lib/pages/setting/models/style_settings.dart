@@ -44,6 +44,36 @@ import 'package:material_design_icons_flutter/material_design_icons_flutter.dart
 import 'package:material_ui/material_ui.dart' hide StatefulBuilder;
 import 'package:path/path.dart' as path;
 
+/// 页面过渡动画的选项与中文名。
+///
+/// 枚举本身来自 getx 依赖（Transition），项目侧只能这样映射，不能新增枚举值。
+/// 「小米澎湃」复用 GetX 已有的 sharedAxis（Material X 轴推进 + 淡入），
+/// 这正是 Android 14 / 澎湃系统页面切换的观感，不需要改依赖。
+const _transitionOptions = <(Transition, String)>[
+  (Transition.sharedAxis, '小米澎湃（X 轴推进）'),
+  (Transition.native, '系统默认（原生 Zoom）'),
+  (Transition.cupertino, 'iOS 风格（横向滑动）'),
+  (Transition.rightToLeftWithFade, '从右滑入 + 淡入'),
+  (Transition.fade, '淡入（自下向上）'),
+  (Transition.fadeIn, '淡入'),
+  (Transition.rightToLeft, '从右向左滑入'),
+  (Transition.leftToRight, '从左向右滑入'),
+  (Transition.upToDown, '从上向下滑入'),
+  (Transition.downToUp, '从下向上滑入'),
+  (Transition.leftToRightWithFade, '从左滑入 + 淡入'),
+  (Transition.zoom, '缩放'),
+  (Transition.topLevel, '顶层缩放'),
+  (Transition.size, '尺寸渐变'),
+  (Transition.circularReveal, '圆形展开'),
+  (Transition.cupertinoDialog, 'iOS 弹窗'),
+  (Transition.noTransition, '无动画'),
+];
+
+/// [Pref.pageTransition] 对应的中文名（找不到时退回枚举名）
+String _transitionLabel(Transition e) => _transitionOptions
+    .firstWhere((item) => item.$1 == e, orElse: () => (e, e.name))
+    .$2;
+
 List<SettingsModel> get styleSettings => [
   if (PlatformUtils.isDesktop) ...[
     const SwitchModel(
@@ -99,7 +129,7 @@ List<SettingsModel> get styleSettings => [
   NormalModel(
     title: '页面过渡动画',
     leading: const Icon(Icons.animation),
-    getSubtitle: () => '当前：${Pref.pageTransition.name}',
+    getSubtitle: () => '当前：${_transitionLabel(Pref.pageTransition)}',
     onTap: _showTransitionDialog,
   ),
   const SwitchModel(
@@ -656,7 +686,7 @@ Future<void> _showTransitionDialog(
     builder: (context) => SelectDialog<Transition>(
       title: '页面过渡动画',
       value: Pref.pageTransition,
-      values: Transition.values.map((e) => (e, e.name)).toList(),
+      values: _transitionOptions,
     ),
   );
   if (res != null) {

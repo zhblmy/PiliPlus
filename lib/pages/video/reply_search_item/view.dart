@@ -70,6 +70,18 @@ class _ReplySearchPageState extends State<ReplySearchPage> {
           children: [
             TabBar(
               controller: _controller.tabController,
+              // 与首页分类 Tab 栏一致：只把下划线上移，让“文字到下划线”的空隙相同
+              // （默认 48 高（46+2）的 Tab 栏要上移 9）
+              indicator: UnderlineTabIndicator(
+                insets: const EdgeInsets.only(bottom: 9),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(3),
+                ),
+                borderSide: BorderSide(
+                  width: 3,
+                  color: ColorScheme.of(context).primary,
+                ),
+              ),
               tabs: const [
                 Tab(text: '视频'),
                 Tab(text: '专栏'),

@@ -3,6 +3,7 @@ import 'package:PiliPlus/common/widgets/dialog/dialog.dart';
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/models/common/dm_block_type.dart';
 import 'package:PiliPlus/models/user/danmaku_block.dart';
@@ -54,17 +55,22 @@ class _DanmakuBlockPageState extends State<DanmakuBlockPage> {
       appBar: AppBar(title: const Text('弹幕屏蔽')),
       body: Column(
         children: [
-          TabBar(
-            controller: _controller.tabController,
-            tabs: DmBlockType.values
-                .map(
-                  (e) => Obx(
-                    () => Tab(
-                      text: '${e.label}(${_controller.rules[e.index].length})',
+          SizedBox(
+            height: Style.tabBarHeight,
+            child: TabBar(
+              indicator: Style.tabIndicator(ColorScheme.of(context).primary),
+              controller: _controller.tabController,
+              tabs: DmBlockType.values
+                  .map(
+                    (e) => Obx(
+                      () => Tab(
+                        text:
+                            '${e.label}(${_controller.rules[e.index].length})',
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
+                  )
+                  .toList(),
+            ),
           ),
           Expanded(
             child: tabBarView(

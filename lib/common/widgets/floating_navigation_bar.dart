@@ -11,10 +11,13 @@ const double _kMaxLabelTextScaleFactor = 1.3;
 /// 悬浮底栏整体尺寸
 const _kNavigationHeight = 55.0;
 const _kIndicatorHeight = _kNavigationHeight - 2 * _kIndicatorPaddingInt;
+
 /// 每一格的宽度（同时也是选中气泡的宽度；整条宽 = 格数 × 该值）
 const _kIndicatorWidth = 90.0;
 const _kIndicatorPaddingInt = 4.0;
-const _kBlurSigma = 14.0;
+
+/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃
+const _kBlurSigma = 28.0;
 const _kIndicatorPadding = EdgeInsets.all(_kIndicatorPaddingInt);
 const _kBorderRadius = BorderRadius.all(.circular(_kNavigationHeight / 2));
 const _kNavigationShape = RoundedSuperellipseBorder(
@@ -142,17 +145,21 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
         child: LiquidGlass(
           shape: _kNavigationShape,
           blur: _kBlurSigma,
-          // 半透明着色：下面的内容会被高斯模糊后透出来
+          // 半透明着色：下面的内容会被高斯模糊后透出来。
+          // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
           color:
               (widget.backgroundColor ??
                       navigationBarTheme.backgroundColor ??
                       defaults.backgroundColor!)
-                  .withValues(alpha: defaults.isDark ? 0.55 : 0.62),
-          highlightColor: Colors.white.withValues(
-            alpha: defaults.isDark ? 0.14 : 0.5,
-          ),
+                  .withValues(alpha: defaults.isDark ? 0.46 : 0.36),
+          highlightColor: Colors.white,
+          // 左上亮、右下渐隐的高光边
+          highlightGradient: defaults.isDark
+              ? kGlassRimGradientDark
+              : kGlassRimGradient,
+          borderWidth: 1.2,
           shadowColor: Colors.black.withValues(
-            alpha: defaults.isDark ? 0.4 : 0.14,
+            alpha: defaults.isDark ? 0.35 : 0.12,
           ),
           child: Padding(
             padding: _kIndicatorPadding,

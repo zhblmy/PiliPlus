@@ -1,4 +1,5 @@
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/common/widgets/view_safe_area.dart';
 import 'package:PiliPlus/pages/live_search/child/view.dart';
@@ -62,31 +63,37 @@ class _LiveSearchPageState extends State<LiveSearchPage> {
             opacity: _controller.hasData.value ? 1 : 0,
             child: Column(
               children: [
-                TabBar(
-                  controller: _controller.tabController,
-                  tabs: [
-                    Obx(
-                      () => Tab(
-                        text:
-                            '正在直播 ${_controller.counts[0] != -1 ? _controller.counts[0] : ''}',
-                      ),
+                SizedBox(
+                  height: Style.tabBarHeight,
+                  child: TabBar(
+                    indicator: Style.tabIndicator(
+                      ColorScheme.of(context).primary,
                     ),
-                    Obx(
-                      () => Tab(
-                        text:
-                            '主播 ${_controller.counts[1] != -1 ? _controller.counts[1] : ''}',
+                    controller: _controller.tabController,
+                    tabs: [
+                      Obx(
+                        () => Tab(
+                          text:
+                              '正在直播 ${_controller.counts[0] != -1 ? _controller.counts[0] : ''}',
+                        ),
                       ),
-                    ),
-                  ],
-                  onTap: (index) {
-                    if (!_controller.tabController.indexIsChanging) {
-                      if (index == 0) {
-                        _controller.roomCtr.animateToTop();
-                      } else {
-                        _controller.userCtr.animateToTop();
+                      Obx(
+                        () => Tab(
+                          text:
+                              '主播 ${_controller.counts[1] != -1 ? _controller.counts[1] : ''}',
+                        ),
+                      ),
+                    ],
+                    onTap: (index) {
+                      if (!_controller.tabController.indexIsChanging) {
+                        if (index == 0) {
+                          _controller.roomCtr.animateToTop();
+                        } else {
+                          _controller.userCtr.animateToTop();
+                        }
                       }
-                    }
-                  },
+                    },
+                  ),
                 ),
                 Expanded(
                   child: tabBarView(

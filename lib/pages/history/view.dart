@@ -5,6 +5,7 @@ import 'package:PiliPlus/common/widgets/gesture/horizontal_drag_gesture_recogniz
 import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart'
     show tabBarScrollPhysics;
 import 'package:PiliPlus/http/loading_state.dart';
@@ -110,25 +111,31 @@ class _HistoryPageState extends State<HistoryPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ?_buildPauseTip,
-                    TabBar(
-                      controller: _historyController.tabController,
-                      onTap: (index) {
-                        if (!_historyController
-                            .tabController!
-                            .indexIsChanging) {
-                          currCtr().scrollController.animToTop();
-                        } else {
-                          if (enableMultiSelect) {
-                            currCtr(
-                              _historyController.tabController!.previousIndex,
-                            ).handleSelect();
+                    SizedBox(
+                      height: Style.tabBarHeight,
+                      child: TabBar(
+                        indicator: Style.tabIndicator(
+                          ColorScheme.of(context).primary,
+                        ),
+                        controller: _historyController.tabController,
+                        onTap: (index) {
+                          if (!_historyController
+                              .tabController!
+                              .indexIsChanging) {
+                            currCtr().scrollController.animToTop();
+                          } else {
+                            if (enableMultiSelect) {
+                              currCtr(
+                                _historyController.tabController!.previousIndex,
+                              ).handleSelect();
+                            }
                           }
-                        }
-                      },
-                      tabs: [
-                        const Tab(text: '全部'),
-                        ...tabs.map((item) => Tab(text: item.name)),
-                      ],
+                        },
+                        tabs: [
+                          const Tab(text: '全部'),
+                          ...tabs.map((item) => Tab(text: item.name)),
+                        ],
+                      ),
                     ),
                     Expanded(
                       child: TabBarView(

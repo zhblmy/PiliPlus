@@ -145,8 +145,11 @@ class _MemberPageState extends State<MemberPage> {
                       children: [
                         if ((_userController.tab2?.length ?? 0) > 1)
                           SizedBox(
-                            height: 45,
+                            height: Style.tabBarHeight,
                             child: TabBar(
+                              indicator: Style.tabIndicator(
+                                ColorScheme.of(context).primary,
+                              ),
                               labelPadding: .zero,
                               controller: _userController.tabController,
                               tabs: _userController.tabs,
