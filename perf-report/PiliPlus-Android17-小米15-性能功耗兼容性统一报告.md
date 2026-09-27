@@ -5,7 +5,7 @@
 >
 > **落点纪律**：只做影响 Android 的改动 —— 能只改 `android/` 就只改 `android/`；必须改 `lib/` 时用 `Platform.isAndroid` / `DeviceUtils.sdkInt` 守卫，不改 iOS 与桌面行为。
 >
-> **最后更新**：2026-09-27（Impeller 试开后实测效果不佳，已回退为默认关闭；MessageQueue 新实现状态核对完毕）
+> **最后更新**：2026-09-27（Impeller 试开后耗电/发热变差，已回退为默认关闭；MessageQueue 新实现状态核对完毕）
 
 ---
 
@@ -52,7 +52,7 @@
 
 | 编号 | 内容 | 用户可感知效果 |
 | --- | --- | --- |
-| PL-01 | Impeller 仍默认关闭（试开：`--android-project-arg=enableImpeller=true`） | 2026-09-27 实测开启后效果不佳，已回退到 Skia（详情见 §5） |
+| PL-01 | Impeller 仍默认关闭（试开：`--android-project-arg=enableImpeller=true`） | 2026-09-27 实测开启后**耗电/发热变差**，已回退到 Skia（详情见 §5） |
 | PL-02 | `vo` / `gpu-api` 可配置 | 个别机型花屏时可切 Vulkan 后端自救 |
 | PL-04 | AV1 硬解 | AV1 片源走硬解，同画质更省电 |
 | PL-05 | 硬解失败自动降级链 | 个别片源黑屏/花屏时自动换解码方式，不用手动改设置 |
@@ -209,8 +209,12 @@
 
 ### Impeller（PL-01，2026-09-27 实测后仍为默认关闭）
 
-- 结论：在小米 15（澎湃 OS 4）上试开 Impeller 后**效果不佳**（2026-09-27 实测反馈），已回退为**默认关闭**（Skia）。
+- 结论：在小米 15（澎湃 OS 4）上试开 Impeller 后**耗电与发热明显变差**（2026-09-27 实测反馈，**没有出现画面异常**），已回退为**默认关闭**（Skia）。
   开关与核验方法保留在下面，方便日后换 Flutter 版本 / 换机型复测。
+- 症状能排除什么：既然是“功耗/发热变差”而不是画错、也没闪退，说明 Impeller 本身渲染是对的，不值得去查兼容性；
+  下次复测应从“每帧重绘的成本”入手——液体玻璃（`BackdropFilter`，底栏 blur 28 / 顶栏 16，都盖在滚动内容上）与
+  骨架屏 `ShaderMask` 这类每帧 backdrop/saveLayer 的路径，是本工程最可能把 GPU 功耗拉上去的地方。
+  （这只是**推测，尚未实测**；报告 §3.7 那条「玻璃模糊按 低功耗/温控 自动降档」就是为这种情况预留的旋钮，目前未实施。）
 - 开关位置：`android/app/build.gradle.kts` 的 `manifestPlaceholders["enableImpeller"]`（**默认 `false`**）→ 清单 `io.flutter.embedding.android.EnableImpeller = ${enableImpeller}`。
   该 flag 在引擎里 `allowedInRelease = true`，所以 release 包也真生效（不合法的话 FlutterLoader 会打 `Log.e` 并忽略）。
 - 打包核验（不用装到设备，最确定）：`aapt2 dump xmltree --file AndroidManifest.xml build\app\outputs\flutter-apk\app-arm64-v8a-release.apk | Select-String EnableImpeller`
@@ -229,7 +233,7 @@
   截图/导出（`lib/utils/screenshot.dart`、`save_panel`、`login` 的 `RepaintBoundary.toImage`）走的是受支持的 `toImage` 路径；`lib/` 里也没有任何依赖“当前跑在 Skia 上”的分支。
 - 历史原因（值得知道）：上游这份 `EnableImpeller=false` 是从 **Kazumi** 抄来的预防性设置（提交 `f6406f47a` 正文：`mod: disable impeller, ref Kazumi`），
   **不是本仓库复现过的 bug**；该提交 2024-12-28 被整体回退过一次（`51f87cc49`），2025-05-16 又随 flutter bump 加了回来（`7ae92970e`）。
-  而 2026-09-27 的实测结论是：**这条预防性关闭仍然需要**（试开后效果不佳，已回退）。日后复测若再出现花屏/闪烁，直接用上面的命令立刻回到 Skia。
+  而 2026-09-27 的实测结论是：**这条预防性关闭仍然需要**（试开后耗电/发热变差，已回退）。日后复测若再出现花屏/闪烁，直接用上面的命令立刻回到 Skia。
 
 ### MessageQueue 新无锁实现（A17-08）
 
