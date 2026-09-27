@@ -33,11 +33,20 @@ android {
         targetSdk = 37
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // Impeller 渲染后端开关（性能报告 PL-01）。
-        // 默认保持“关闭”（历史兼容性考虑），需要 A/B 实测时用：
-        //   flutter build apk --android-project-arg=enableImpeller=true
+        // Impeller 渲染后端开关（性能报告 PL-01）
+        // 默认「开启」：小米 15（8 Elite + Adreno 830）等 Vulkan 驱动成熟的机型上，
+        // Impeller(Vulkan) 能降低 CPU 合成开销、让弹幕/列表滚动这类每帧重绘场景的帧时间更稳。
+        // 回退方式（重新打包，最可靠）：
+        //   flutter build apk --android-project-arg=enableImpeller=false
+        //   （这个值会被 flutter 工具自己拼成 -PenableImpeller=false，不要再手写 -P）
+        // 调试捷径（免重新打包，但必须先 force-stop，否则会复用旧进程上的设置）：
+        //   adb shell am force-stop com.example.piliplus
+        //   adb shell am start -n com.example.piliplus/.MainActivity --ez enable-impeller false
+        //   注意：上游已声明「用 Intent 传引擎 flag」将逐步废弃（flutter/flutter#180686），
+        //   清单 + 构建参数才是长期有效的路子。
+        // 核验：启动后 logcat 里出现 "Using the Impeller rendering backend (Vulkan)." 才算真的生效。
         manifestPlaceholders["enableImpeller"] =
-            (project.findProperty("enableImpeller") as String?) ?: "false"
+            (project.findProperty("enableImpeller") as String?) ?: "true"
     }
 
     packagingOptions.jniLibs.useLegacyPackaging = true

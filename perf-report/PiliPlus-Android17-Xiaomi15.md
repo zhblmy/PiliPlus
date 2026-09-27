@@ -39,7 +39,7 @@
 | **MI-03** 通知权限 ✅ | `play_settings.dart` | 开启「后台音频服务」时申请 `POST_NOTIFICATIONS`（未授权时媒体控制条/锁屏控件不显示，用户会误判"后台播放无效"） |
 | **MI-04** 低功耗降档 ✅ | 新增 `lib/services/power_save_watcher.dart`、`lib/utils/device_state.dart`；`AndroidHelper.java` 新增 `thermalStatus()` | 省电模式 / 未充电且 &lt;20% / 温控 ≥ MODERATE 判定为低功耗 → 刷新率 60Hz + 临时清空 glsl-shaders（不落盘改用户设置）+ 弹幕区域 ×0.6 且去描边 + 缓冲 ×0.75；仅应用可见时 3 分钟轮询 |
 | **MI-08** 音频输出 ✅（默认值）/⏳ 取值仍建议实测 | `audio_output_type.dart`；`mpv_convert_webp.dart` | `ao` 默认顺序改为 **AAudio → AudioTrack → OpenSL ES**（OpenSL ES 已被官方标记待弃用）；顺带修掉转码路径 `no,auto-copy` 的无效拼接（会让 mpv 完全关掉硬解） |
-| **PL-01** Impeller ✅（开关化） | `build.gradle.kts` + 清单占位符 | `android:value="${enableImpeller}"`，默认仍为关闭；A/B 只需 `flutter build apk --android-project-arg=enableImpeller=true`，无需改代码 |
+| **PL-01** Impeller ✅（开关化） | `build.gradle.kts` + 清单占位符 | `android:value="${enableImpeller}"`；**2026-09-27 起默认开启**（本文件为历史来源报告，现状与回退命令见统一报告 PL-01）；关掉只需 `flutter build apk --android-project-arg=enableImpeller=false`，无需改代码 |
 | **PL-02** 输出后端 ✅（开关化） | `video_settings.dart` 新增「视频输出后端」；`controller.dart` 注入 mpv `opt` | 默认「不设置」= 完全沿用 mpv 默认（行为不变）；可选 `vo=gpu-next` / `vo=gpu-next,gpu-api=vulkan` 等，需重新打开视频生效 |
 | **PL-04** AV1 / 硬解核验 ✅ | `header_control.dart` 播放信息面板 | 新增 `video-codec` / `container-fps` / `estimated-vf-fps` 三项，用来确认"是否真走硬解、是否为 AV1"。另核实：`lib/http/video.dart:102` 的 `fnval=976` **本身就包含 AV1 位(128)**，请求侧无需改动 |
 | **PL-05** 硬解降级链 ✅ | `controller.dart` + `video_settings.dart` 开关 | 解码失败时运行时改 `hwdec` 并重新 `open`（mpv 无法热切换解码器）：`mediacodec-copy` → `auto-copy` → 软解；每部媒体最多 3 次、换片重置；默认开启可关闭 |

@@ -5,7 +5,7 @@
 >
 > **落点纪律**：只做影响 Android 的改动 —— 能只改 `android/` 就只改 `android/`；必须改 `lib/` 时用 `Platform.isAndroid` / `DeviceUtils.sdkInt` 守卫，不改 iOS 与桌面行为。
 >
-> **最后更新**：2026-09-26（完成「零风险快赢」与「可见性门控」两批）
+> **最后更新**：2026-09-27（Impeller 默认开启并补上核验口径；MessageQueue 新实现状态核对）
 
 ---
 
@@ -18,7 +18,7 @@
 | 2 | 应用可见性统一门控（熄屏/后台耗电主线） | ✅ 2026-09-26 完成骨架 + 3 处接入 |
 | 3 | 卡顿与发热主线（直播弹幕 isolate、评论缓存、每帧重建） | ⏳ 未开始 |
 | 4 | 后台长任务与更新链路（下载前台服务、应用内安装、正式签名） | ⏳ 未开始 |
-| 5 | 画质与渲染后端（HDR、Impeller A/B、解码线程） | ⏳ 未开始 |
+| 5 | 画质与渲染后端（Impeller 已默认开启 ✅；HDR、解码线程未开始） | 🟡 进行中 |
 | 6 | 发布（R8、16 KB 页对齐、大屏方向） | ⏳ 未开始 |
 
 ---
@@ -33,6 +33,7 @@
 | A17-02 | 声明并申请 `ACCESS_LOCAL_NETWORK` | DLNA 投屏在 Android 17 上能搜到设备；被拒绝时提示「去设置」而不是「没有设备」 |
 | A17-03 | 内存预算：图片缓存与播放缓冲按设备内存分级 | 低内存机不被系统杀后台；大内存机图片缓存更足、滚动更顺 |
 | A17-06 | `enableOnBackInvokedCallback` 改 `true` | 侧滑返回与系统手势一致，不再出现返回动画卡住/重复返回 |
+| A17-08 | MessageQueue 新无锁实现（Android 17 + targetSdk 37 **默认启用**，App 侧无开关） | 无感知：本 App 不反射 `MessageQueue`，已核对无影响（见 §5 验证命令） |
 | A17-12 | 蓝牙重配对、跨配置回环、Keystore 上限 | 无感知（确认无影响） |
 
 ### 2.2 澎湃 OS / 小米 15（批次 0）
@@ -51,7 +52,7 @@
 
 | 编号 | 内容 | 用户可感知效果 |
 | --- | --- | --- |
-| PL-01 | Impeller 开关化（默认关） | 可 A/B 实测；默认保证兼容性 |
+| PL-01 | **Impeller 默认开启**（`EnableImpeller=true`；`--android-project-arg=enableImpeller=false` 可回退） | 弹幕密集 / 列表滚动这类每帧重绘场景帧时间更稳、CPU 合成开销下降 |
 | PL-02 | `vo` / `gpu-api` 可配置 | 个别机型花屏时可切 Vulkan 后端自救 |
 | PL-04 | AV1 硬解 | AV1 片源走硬解，同画质更省电 |
 | PL-05 | 硬解失败自动降级链 | 个别片源黑屏/花屏时自动换解码方式，不用手动改设置 |
@@ -205,3 +206,36 @@
 - 本机全量 Gradle 构建约 2~4 min（`kotlin.incremental=false`，见 BD-02 说明），不要误判为卡死；构建期间不要并发跑其它 `gradlew` 命令。
 - 回归设备：小米 15（澎湃 OS 4，主）+ 一台 Android 12/13 旧机（验证 `Platform.isAndroid` / `sdkInt` 守卫没写反）。
 - 关键量化场景（改动前后各测一次）：待机 8 h 电流与唤醒次数；冷启动 `am start -W` 的 `TotalTime`；1080P60 播放 30 min 的 CPU/电量；视频页滚动 3 min 的 P95 帧时间；热门直播间 10 min 的 UI isolate CPU。
+
+### Impeller（PL-01，2026-09-27 起默认开启）
+
+- 开关位置：`android/app/build.gradle.kts` 的 `manifestPlaceholders["enableImpeller"]`（**默认 `true`**）→ 清单 `io.flutter.embedding.android.EnableImpeller = ${enableImpeller}`。
+  该 flag 在引擎里 `allowedInRelease = true`，所以 release 包也真生效（不合法的话 FlutterLoader 会打 `Log.e` 并忽略）。
+- 打包核验（不用装到设备，最确定）：`aapt2 dump xmltree --file AndroidManifest.xml build\app\outputs\flutter-apk\app-arm64-v8a-release.apk | Select-String EnableImpeller`
+  期望 `android:value="true"`（加上回退参数重新打包时应为 `"false"`）。
+- 运行时核验：`adb logcat -c` → 启动 App → `adb logcat -d | Select-String "Using the Impeller rendering backend"`。
+  出现 `Using the Impeller rendering backend (Vulkan).` 就是 Impeller 已生效（OpenGLES 后端会打 `... (OpenGLES).`）；没有这一行就是跑在 Skia 上。
+- 回退构建（推荐）：`flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=pili_release.json --no-pub --android-project-arg=enableImpeller=false`
+  （`--android-project-arg` 的值**不要**自己加 `-P` 前缀，工具会拼成 `-PenableImpeller=false`）。
+- 调试捷径（不重新打包，但**必须先 force-stop**，否则会复用旧进程/旧引擎上的设置）：
+  `adb shell am force-stop com.example.piliplus` 后再 `adb shell am start -n com.example.piliplus/.MainActivity --ez enable-impeller false`
+  （引擎从 intent extra `enable-impeller` 读值，见 `FlutterShellArgs.fromIntent` / `FlutterEngineFlags.getFlagFromIntentKey`）。
+  ⚠️ 上游已声明「用 Intent 传引擎 flag」迟早会被移除（flutter/flutter#180686），所以只当调试手段，正式回退用上面的重新打包。
+- 已确认引擎二进制里同时含 Vulkan / OpenGLES 两个 Impeller 后端（`libflutter.so` 里有 `Using the Impeller rendering backend (Vulkan).`、`... (OpenGLES).`），所以禁用 Vulkan 的设备也能回落到 GLES 后端。
+- 回归清单（放开后过一遍，看“有没有画错/崩”而非性能）：播放画面与弹幕渲染、PiP、投屏、截图与 WebP 导出、液体玻璃（BackdropFilter）、骨架屏 ShaderMask。
+- 已核对不涉及 Impeller 的已知局限：全库没有 `toImageSync`，也没有 `ScreenshotType.skiaPicture` 用法（这两条是 Impeller 的限制），
+  截图/导出（`lib/utils/screenshot.dart`、`save_panel`、`login` 的 `RepaintBoundary.toImage`）走的是受支持的 `toImage` 路径；`lib/` 里也没有任何依赖“当前跑在 Skia 上”的分支。
+- 历史原因（值得知道）：上游这份 `EnableImpeller=false` 是从 **Kazumi** 抄来的预防性设置（提交 `f6406f47a` 正文：`mod: disable impeller, ref Kazumi`），
+  **不是本仓库复现过的 bug**；该提交 2024-12-28 被整体回退过一次（`51f87cc49`），2025-05-16 又随 flutter bump 加了回来（`7ae92970e`）。
+  所以这次是「去掉一个预防性关闭」：风险面主要在 media_kit 的画面路径，必须过上面的回归清单；一旦发现花屏/闪烁，用 `--android-project-arg=enableImpeller=false` 退回。
+
+### MessageQueue 新无锁实现（A17-08）
+
+- 结论：**App 侧没有开关，也不需要“打开”**。Android 17 上只要 `targetSdk >= 37` 就默认收到新无锁实现（官方行为变更），本项目 `targetSdk = 37` → 已生效。
+- 静态核对：`lib/` 与 `android/app/src/` 全库搜 `MessageQueue` 零命中（无反射、无消息队列监控代码）；`pubspec.yaml` 无 Firebase / Sentry / Bugly 等性能监控 SDK；release 只有 `enableLog = true` 时才挂 Catcher2。
+- 真机核对 / 回退（仅调试排查用；`am compat` 需要**可调试 build** 或设备已 root）：
+  - `adb shell am compat disable USE_NEW_MESSAGEQUEUE com.example.piliplus` → 临时回到旧的锁实现
+  - `adb shell am compat enable USE_NEW_MESSAGEQUEUE com.example.piliplus` → 提前启用（仅对 targetSdk < 37 的可调试 build 有意义）
+  - `adb shell dumpsys platform_compat | Select-String USE_NEW_MESSAGEQUEUE` → 看该标志当前状态
+  官方文档写的是 `adb am compat ...`（漏了 `shell`），实际要写 `adb shell am compat ...`。
+- 判别细节：新实现保留了 `MessageQueue.mMessages` 字段（二进制兼容），但它**恒为 null** —— 任何靠读该字段判断“队列里有没有消息”的库都会读到空值。
