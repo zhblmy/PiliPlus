@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:PiliPlus/common/assets.dart';
 import 'package:PiliPlus/common/constants.dart';
-import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/floating_navigation_bar.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
@@ -356,7 +355,7 @@ class _MainAppState extends PopScopeState<MainApp>
           blur: _kBottomNavBlur,
           // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
           color: _colorScheme.surfaceContainer.withValues(
-            alpha: _colorScheme.isDark ? 0.46 : 0.36,
+            alpha: _colorScheme.isDark ? 0.32 : 0.22,
           ),
           highlightColor: Colors.white,
           // 左上亮、右下渐隐的高光边
@@ -395,7 +394,7 @@ class _MainAppState extends PopScopeState<MainApp>
           blur: _kBottomNavBlur,
           // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
           color: _colorScheme.surfaceContainer.withValues(
-            alpha: _colorScheme.isDark ? 0.46 : 0.36,
+            alpha: _colorScheme.isDark ? 0.32 : 0.22,
           ),
           highlightColor: Colors.white,
           // 左上亮、右下渐隐的高光边
@@ -431,24 +430,17 @@ class _MainAppState extends PopScopeState<MainApp>
       }
 
       if (_mainController.hideBottomBar) {
-        if (_mainController.barOffset case final barOffset?) {
-          return Obx(
-            () => FractionalTranslation(
-              translation: Offset(
-                0.0,
-                barOffset.value / Style.topBarHeight,
-              ),
-              child: bottomNav,
-            ),
-          );
-        }
         if (_mainController.showBottomBar case final showBottomBar?) {
+          // 两态：滚动方向一变就整条收起/弹出，不停在半路。
+          // 用 AnimatedSlide（Transform 平移，不触发布局）+ RepaintBoundary，
+          // 动画期间底栏那棵玻璃子树实例不变、不会被重建。
+          final bar = RepaintBoundary(child: bottomNav);
           return Obx(
             () => AnimatedSlide(
-              curve: Curves.easeInOutCubicEmphasized,
-              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              duration: const Duration(milliseconds: 220),
               offset: Offset(0, showBottomBar.value ? 0 : 1),
-              child: bottomNav,
+              child: bar,
             ),
           );
         }

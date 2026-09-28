@@ -105,79 +105,70 @@ class _HomePageState extends CommonPageState<HomePage>
       );
     }
 
-    // 顶栏（搜索栏 + 分类 Tab）改为液体玻璃悬浮层，
-    // 列表内容不再被挤在它下面，而是从它下方穿过并被模糊。
-    Widget glassTopBar() {
-      final (appBar, appBarHeight) = _appBarArea();
-      // 分类 Tab 区就是 42 的栏高本身（不再额外垫 4 的间距），
-      // 这样它离上面那行搜索框/头像更近，整个顶栏也更矮
-      final double inset =
-          appBarHeight + (hasTabBar ? Style.tabBarHeight : 6.0);
-      final bool isDark = _colorScheme.isDark;
-      return Stack(
-        children: [
-          Positioned.fill(child: _topBarInset(inset, body)),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: LiquidGlass(
-              shape: kGlassTopBarShape,
-              blur: 16,
-              color: _colorScheme.surface.withValues(
-                alpha: isDark ? 0.5 : 0.62,
-              ),
-              shadowColor: Colors.black.withValues(
-                alpha: isDark ? 0.4 : 0.1,
-              ),
-              child: Column(
-                mainAxisSize: .min,
-                children: [appBar, tabBar],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    // hideTopBar 时顶栏会随滚动收起，需要在同一次刷新里取到最新高度
-    return _homeController.hideTopBar ? Obx(glassTopBar) : glassTopBar();
-  }
-
-  /// 让滚动内容为玻璃顶栏让出空间；instant 模式下顶栏是整体收起/展开的，
-  /// 内边距要跟着一起动画，否则会闪出一条空白。
-  Widget _topBarInset(double inset, Widget child) {
-    if (_homeController.hideTopBar && _mainController.barHideType == .instant) {
-      return TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutCubicEmphasized,
-        tween: Tween<double>(end: inset),
-        builder: (context, value, child) =>
-            TopBarInset(value: value, child: child!),
-        child: child,
-      );
-    }
-    return TopBarInset(value: inset, child: child);
-  }
-
-  /// 玻璃顶栏的顶部区域：状态栏那片 + 搜索栏。
-  /// 状态栏高度单独占一块（不跟着搜索栏收起），这样玻璃始终盖住状态栏。
-  /// 第二项是这一区域当前的高度（收起动画中会变化）。
-  (Widget, double) _appBarArea() {
+    // 顶栏（搜索栏 + 分类 Tab）是液体玻璃悬浮层，铺满整宽、盖住状态栏，
+    // 内容从它下方穿过并被模糊（给内容让位见 TopBarInset / TopBarInsetSpacer）。
+    //
+    // 性能：玻璃实例在这里建一次，滚动时**只重建搜索行那一层包装**
+    // （高度 + 位移），不会每帧重建 BackdropFilter。
     final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
-    final (appBar, appBarHeight) = _searchBarArea();
-    return (
-      Column(
-        mainAxisSize: .min,
-        children: [
-          SizedBox(height: statusBarHeight),
-          // CustomHeightWidget / AnimatedContainer 收起时只会把内容挪走、并不裁剪，
-          // 超出搜索栏那块的会画到状态栏那片玻璃（或分类 Tab）上，必须裁掉。
-          // 以前是靠外层 TabBarView 的裁剪兜住的。
-          ClipRect(child: appBar),
-        ],
-      ),
-      statusBarHeight + appBarHeight,
+    final double tabAreaHeight = hasTabBar ? Style.tabBarHeight : 6.0;
+
+    Widget glassTopBar() {
+      final bool isDark = _colorScheme.isDark;
+      // 静态的搜索行内容（只跟主题/登录态有关，不读 barOffset）
+      final searchRow = _searchRow();
+      return LiquidGlass(
+        shape: kGlassTopBarShape,
+        blur: 16,
+        color: _colorScheme.surface.withValues(alpha: isDark ? 0.5 : 0.62),
+        shadowColor: Colors.black.withValues(alpha: isDark ? 0.4 : 0.1),
+        child: Column(
+          mainAxisSize: .min,
+          children: [
+            SizedBox(height: statusBarHeight),
+            // CustomHeightWidget / AnimatedContainer 收起时只会把内容挪走、
+            // 并不裁剪，超出搜索栏那块的会画到状态栏那片玻璃上，必须裁掉。
+            ClipRect(
+              child: _homeController.hideTopBar
+                  ? Obx(() => _collapsibleSearchArea(searchRow))
+                  : _staticSearchArea(searchRow),
+            ),
+            tabBar,
+          ],
+        ),
+      );
+    }
+
+    // 让内容为玻璃顶栏让位：收起过程中高度随之变小。
+    // 只重建 TopBarInset 这一层，body 始终是同一个实例。
+    Widget bodyWithInset() {
+      final double inset =
+          statusBarHeight + _searchAreaHeight() + tabAreaHeight;
+      // instant 模式下顶栏是整体收起/展开的，内边距要跟着一起动画，
+      // 否则会闪出一条空白
+      if (_homeController.hideTopBar &&
+          _mainController.barHideType == .instant) {
+        return TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOutCubicEmphasized,
+          tween: Tween<double>(end: inset),
+          builder: (context, value, child) =>
+              TopBarInset(value: value, child: child!),
+          child: body,
+        );
+      }
+      return TopBarInset(value: inset, child: body);
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _homeController.hideTopBar
+              ? Obx(bodyWithInset)
+              : bodyWithInset(),
+        ),
+        Positioned(top: 0, left: 0, right: 0, child: glassTopBar()),
+      ],
     );
   }
 
@@ -188,70 +179,69 @@ class _HomePageState extends CommonPageState<HomePage>
   static const double _searchRowHeight = 48;
   static const double _searchRowVPadding =
       (Style.topBarHeight - _searchRowHeight) / 2;
+  static const EdgeInsets _searchRowPadding = EdgeInsets.symmetric(
+    horizontal: 14,
+    vertical: _searchRowVPadding,
+  );
 
-  /// 顶部搜索栏本身（不含状态栏那片），第二项是它当前的高度
-  (Widget, double) _searchBarArea() {
-    // 上下对称，行本身在 52 高的区域里居中
-    const padding = EdgeInsets.symmetric(
-      horizontal: 14,
-      vertical: _searchRowVPadding,
-    );
-    final child = SizedBox(
-      height: _searchRowHeight,
-      child: Row(
-        children: [
-          searchBar(),
-          const SizedBox(width: 4),
-          msgBadge(_mainController),
-          const SizedBox(width: 8),
-          userAvatar(
-            colorScheme: _colorScheme,
-            mainController: _mainController,
-          ),
-        ],
-      ),
-    );
-    if (_homeController.hideTopBar) {
-      if (_mainController.barOffset case final barOffset?) {
-        final offset = barOffset.value;
-        return (
-          CustomHeightWidget(
-            offset: Offset(0, -offset),
-            height: Style.topBarHeight - offset,
-            child: Padding(
-              padding: padding,
-              child: child,
-            ),
-          ),
-          Style.topBarHeight - offset,
-        );
-      }
-      if (_homeController.showTopBar case final showTopBar?) {
-        final showSearchBar = showTopBar.value;
-        return (
-          AnimatedOpacity(
-            opacity: showSearchBar ? 1 : 0,
-            duration: const Duration(milliseconds: 300),
-            child: AnimatedContainer(
-              curve: Curves.easeInOutCubicEmphasized,
-              duration: const Duration(milliseconds: 500),
-              height: showSearchBar ? Style.topBarHeight : 0,
-              padding: padding,
-              child: child,
-            ),
-          ),
-          showSearchBar ? Style.topBarHeight : 0,
-        );
-      }
+  /// 搜索行内容（静态实例，不读 barOffset，所以不会每帧重建）
+  Widget _searchRow() => SizedBox(
+    height: _searchRowHeight,
+    child: Row(
+      children: [
+        searchBar(),
+        const SizedBox(width: 4),
+        msgBadge(_mainController),
+        const SizedBox(width: 8),
+        userAvatar(colorScheme: _colorScheme, mainController: _mainController),
+      ],
+    ),
+  );
+
+  /// 搜索栏那一块当前的高度（收起模式下随滚动变小）
+  double _searchAreaHeight() {
+    if (!_homeController.hideTopBar) return Style.topBarHeight;
+    if (_mainController.barOffset case final barOffset?) {
+      return Style.topBarHeight - barOffset.value;
     }
-    return (
-      Container(
-        height: Style.topBarHeight,
-        padding: padding,
-        child: child,
-      ),
-      Style.topBarHeight,
-    );
+    if (_homeController.showTopBar case final showTopBar?) {
+      return showTopBar.value ? Style.topBarHeight : 0.0;
+    }
+    return Style.topBarHeight;
+  }
+
+  /// 顶栏常驻（不收起）时的搜索行
+  Widget _staticSearchArea(Widget content) => Container(
+    height: Style.topBarHeight,
+    padding: _searchRowPadding,
+    child: content,
+  );
+
+  /// 收起模式下每帧重建的那一层包装（child 是上面那个静态实例）
+  Widget _collapsibleSearchArea(Widget content) {
+    if (_mainController.barOffset case final barOffset?) {
+      final offset = barOffset.value;
+      return CustomHeightWidget(
+        offset: Offset(0, -offset),
+        height: Style.topBarHeight - offset,
+        child: Padding(padding: _searchRowPadding, child: content),
+      );
+    }
+    if (_homeController.showTopBar case final showTopBar?) {
+      final showSearchBar = showTopBar.value;
+      return AnimatedOpacity(
+        opacity: showSearchBar ? 1 : 0,
+        duration: const Duration(milliseconds: 300),
+        child: AnimatedContainer(
+          curve: Curves.easeInOutCubicEmphasized,
+          duration: const Duration(milliseconds: 500),
+          height: showSearchBar ? Style.topBarHeight : 0,
+          padding: _searchRowPadding,
+          child: content,
+        ),
+      );
+    }
+    return _staticSearchArea(content);
   }
 
   Widget searchBar() {

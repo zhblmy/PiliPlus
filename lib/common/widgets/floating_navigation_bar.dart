@@ -18,6 +18,15 @@ const _kIndicatorPaddingInt = 4.0;
 
 /// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃
 const _kBlurSigma = 28.0;
+
+/// 按住气泡时的放大倍数（手指按下 → 放大，抬手 → 缩回）
+const _kPressScale = 1.3;
+
+/// 按下放大 / 抬手缩回的时长
+const _kPressDuration = Duration(milliseconds: 150);
+
+/// 手指横向移动超过这个距离才算“拖动气泡”，避免点按时气泡抖动
+const _kDragSlop = 4.0;
 const _kIndicatorPadding = EdgeInsets.all(_kIndicatorPaddingInt);
 const _kBorderRadius = BorderRadius.all(.circular(_kNavigationHeight / 2));
 const _kNavigationShape = RoundedSuperellipseBorder(
@@ -68,21 +77,94 @@ class FloatingNavigationBar extends StatefulWidget {
 }
 
 class _FloatingNavigationBarState extends State<FloatingNavigationBar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: widget.animationDuration,
   );
 
+  /// 按下放大 / 抬手缩回
+  late final AnimationController _pressController = AnimationController(
+    vsync: this,
+    duration: _kPressDuration,
+  );
+
+  late final Animation<double> _pressScale =
+      Tween<double>(
+        begin: 1.0,
+        end: _kPressScale,
+      ).animate(
+        CurvedAnimation(
+          parent: _pressController,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeOutCubic,
+        ),
+      );
+
   /// 气泡滑动的起点 / 终点（单位：第几格）；动画途中再次切换时从当前位置续接
   late double _from = widget.selectedIndex.toDouble();
   late double _to = _from;
 
-  /// 气泡当前所在的格（带小数 = 正在滑动）
-  double get _position =>
-      _from +
-      (_to - _from) *
-          Curves.easeInOutCubicEmphasized.transform(_controller.value);
+  /// 手指正在拖动气泡时的位置（单位：第几格，可带小数）；null = 没在拖。
+  /// 用 [ValueNotifier] 而不是 setState：拖动过程中只有气泡自己重建，
+  /// 整条玻璃栏（含 BackdropFilter）不跟着每帧重建。
+  final _dragPosition = ValueNotifier<double?>(null);
+  int? _activePointer;
+  double _dragStartDx = 0.0;
+  double _dragStartPosition = 0.0;
+
+  /// 气泡当前所在的格（带小数 = 正在拖动 / 滑动）
+  double get _position {
+    final drag = _dragPosition.value;
+    if (drag != null) return drag;
+    return _from +
+        (_to - _from) *
+            Curves.easeInOutCubicEmphasized.transform(_controller.value);
+  }
+
+  double get _cellWidth =>
+      (widget.destinations.length * _kIndicatorWidth -
+          2 * _kIndicatorPaddingInt) /
+      widget.destinations.length;
+
+  void _onPointerDown(PointerDownEvent event) {
+    // 不用 if (_activePointer != null) return：万一上一次按下没收到抬手事件
+    // （比如中途被移出树），直接接管，别把气泡交互永久锁死。
+    _activePointer = event.pointer;
+    _dragStartDx = event.position.dx;
+    _dragStartPosition = _position;
+    _pressController.forward();
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _activePointer) return;
+    final double dx = event.position.dx - _dragStartDx;
+    if (_dragPosition.value == null && dx.abs() < _kDragSlop) return;
+    final double max = widget.destinations.length - 1.0;
+    _dragPosition.value = (_dragStartPosition + dx / _cellWidth).clamp(
+      0.0,
+      max,
+    );
+  }
+
+  /// 抬手（或手势被取消）：气泡收缩并吸附到最近一格。
+  /// 吸附目标与当前选中项不同时，顺带切换过去，保证气泡和选中态一致。
+  void _endDrag({bool cancel = false}) {
+    _activePointer = null;
+    _pressController.reverse();
+    final double? from = _dragPosition.value;
+    _dragPosition.value = null;
+    if (from == null) return;
+    final int nearest = from.round().clamp(0, widget.destinations.length - 1);
+    _from = from;
+    _to = nearest.toDouble();
+    _controller
+      ..reset()
+      ..forward();
+    if (!cancel && nearest != widget.selectedIndex) {
+      widget.onDestinationSelected?.call(nearest);
+    }
+  }
 
   @override
   void didUpdateWidget(covariant FloatingNavigationBar oldWidget) {
@@ -102,6 +184,8 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
   @override
   void dispose() {
     _controller.dispose();
+    _pressController.dispose();
+    _dragPosition.dispose();
     super.dispose();
   }
 
@@ -125,8 +209,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
 
     // 玻璃内可用宽度（去掉左右 padding）再平分到每一格
     final int count = widget.destinations.length;
-    final double cellWidth =
-        (count * _kIndicatorWidth - 2 * _kIndicatorPaddingInt) / count;
+    final double cellWidth = _cellWidth;
     final Color bubbleColor =
         widget.indicatorColor ??
         navigationBarTheme.indicatorColor ??
@@ -151,7 +234,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
               (widget.backgroundColor ??
                       navigationBarTheme.backgroundColor ??
                       defaults.backgroundColor!)
-                  .withValues(alpha: defaults.isDark ? 0.46 : 0.36),
+                  .withValues(alpha: defaults.isDark ? 0.32 : 0.22),
           highlightColor: Colors.white,
           // 左上亮、右下渐隐的高光边
           highlightGradient: defaults.isDark
@@ -161,68 +244,85 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
           shadowColor: Colors.black.withValues(
             alpha: defaults.isDark ? 0.35 : 0.12,
           ),
-          child: Padding(
-            padding: _kIndicatorPadding,
-            child: Stack(
-              // 气泡宽度 == 格子宽度时会比格子略宽一点点（沿用原实现的取值），
-              // 不裁剪才不会在第一/最后一格边缘切出一小块平面
-              clipBehavior: Clip.none,
-              children: [
-                // 选中气泡只画一个，跟着选中项横向滑动
-                // （用 Transform 平移，不会触发重新布局；放在格子下面）
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: _kIndicatorWidth,
-                  child: AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, child) => Transform.translate(
-                      offset: Offset(
-                        cellWidth * _position +
-                            (cellWidth - _kIndicatorWidth) / 2,
-                        0,
+          // 用 Listener（原始指针事件）而不是 GestureDetector：
+          // 它不会和下面每个 destination 的点击识别器抢手势，
+          // 点按依旧由各自的 GestureDetector 处理。
+          child: Listener(
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: (_) => _endDrag(),
+            onPointerCancel: (_) => _endDrag(cancel: true),
+            child: Padding(
+              padding: _kIndicatorPadding,
+              child: Stack(
+                // 气泡宽度 == 格子宽度时会比格子略宽一点点（沿用原实现的取值），
+                // 不裁剪才不会在第一/最后一格边缘切出一小块平面
+                clipBehavior: Clip.none,
+                children: [
+                  // 选中气泡只画一个，跟着选中项横向滑动
+                  // （用 Transform 平移，不会触发重新布局；放在格子下面）。
+                  // 手指按住时放大、拖动时跟手、抬手后缩回并吸附到最近一格。
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: _kIndicatorWidth,
+                    child: ValueListenableBuilder<double?>(
+                      valueListenable: _dragPosition,
+                      builder: (context, _, child) => AnimatedBuilder(
+                        animation: _controller,
+                        builder: (context, _) => Transform.translate(
+                          offset: Offset(
+                            cellWidth * _position +
+                                (cellWidth - _kIndicatorWidth) / 2,
+                            0,
+                          ),
+                          child: child,
+                        ),
+                        child: child,
                       ),
-                      child: child,
-                    ),
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        shape: _kNavigationShape,
-                        color: bubbleColor,
-                      ),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                ),
-                Row(
-                  crossAxisAlignment: .stretch,
-                  children: <Widget>[
-                    for (int i = 0; i < count; i++)
-                      Expanded(
-                        child: _SelectableAnimatedBuilder(
-                          duration: widget.animationDuration,
-                          isSelected: i == widget.selectedIndex,
-                          builder: (context, animation) {
-                            return _NavigationDestinationInfo(
-                              index: i,
-                              selectedIndex: widget.selectedIndex,
-                              totalNumberOfDestinations: count,
-                              selectedAnimation: animation,
-                              labelBehavior: effectiveLabelBehavior,
-                              indicatorColor: widget.indicatorColor,
-                              indicatorShape: widget.indicatorShape,
-                              overlayColor: widget.overlayColor,
-                              onTap: _handleTap(i),
-                              labelTextStyle: widget.labelTextStyle,
-                              labelPadding: widget.labelPadding,
-                              child: widget.destinations[i],
-                            );
-                          },
+                      child: ScaleTransition(
+                        scale: _pressScale,
+                        child: DecoratedBox(
+                          decoration: ShapeDecoration(
+                            shape: _kNavigationShape,
+                            color: bubbleColor,
+                          ),
+                          child: const SizedBox.expand(),
                         ),
                       ),
-                  ],
-                ),
-              ],
+                    ),
+                  ),
+                  Row(
+                    crossAxisAlignment: .stretch,
+                    children: <Widget>[
+                      for (int i = 0; i < count; i++)
+                        Expanded(
+                          child: _SelectableAnimatedBuilder(
+                            duration: widget.animationDuration,
+                            isSelected: i == widget.selectedIndex,
+                            builder: (context, animation) {
+                              return _NavigationDestinationInfo(
+                                index: i,
+                                selectedIndex: widget.selectedIndex,
+                                totalNumberOfDestinations: count,
+                                selectedAnimation: animation,
+                                labelBehavior: effectiveLabelBehavior,
+                                indicatorColor: widget.indicatorColor,
+                                indicatorShape: widget.indicatorShape,
+                                overlayColor: widget.overlayColor,
+                                onTap: _handleTap(i),
+                                labelTextStyle: widget.labelTextStyle,
+                                labelPadding: widget.labelPadding,
+                                child: widget.destinations[i],
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

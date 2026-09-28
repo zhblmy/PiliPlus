@@ -92,11 +92,11 @@ class MainController extends GetxController
     hideBottomBar =
         !useSideBar && navigationBars.length > 1 && Pref.hideBottomBar;
     if (hideBottomBar) {
-      switch (barHideType) {
-        case .instant:
-          showBottomBar = RxBool(true);
-        case .sync:
-          barOffset ??= RxDouble(0.0);
+      // 底栏现在是两态（上滑一次收起 / 下滑一次弹出），两种“收起方式”
+      // 都靠这个开关，所以无条件建；barOffset 仍留给动态页顶部面板用。
+      showBottomBar = RxBool(true);
+      if (barHideType == .sync) {
+        barOffset ??= RxDouble(0.0);
       }
     }
 

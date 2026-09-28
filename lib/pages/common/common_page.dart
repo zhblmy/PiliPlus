@@ -139,6 +139,13 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
     final metrics = notification.metrics;
     if (metrics.axis == .horizontal) return false;
 
+    if (notification is UserScrollNotification) {
+      // 底栏是两态：只要滚动方向变了就一次性收起/弹出（不跟位移），
+      // 与 barOffset 的连续补间互不干扰。
+      onNotificationType1(notification);
+      return false;
+    }
+
     if (notification is ScrollStartNotification) {
       // 手指按下：收尾动画立即让位给手指并重新累计方向。
       // 注意这里只认“手指拖动”（dragDetails != null），

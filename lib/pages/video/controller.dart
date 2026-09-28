@@ -705,7 +705,13 @@ class VideoDetailController extends GetxController
     playerInit();
   }
 
-  Future<void>? _initPlayerIfNeeded(bool autoFullScreenFlag) {
+  Future<void>? _initPlayerIfNeeded(bool autoFullScreenFlag) async {
+    // 推入本页的转场动画播完前先挂起（见 video/view.dart）：真正 open 媒体
+    // 会重建解码器/纹理，首帧成本压在转场收尾那一帧上就是「动画最后卡一下」。
+    if (_initGate case final gate?) {
+      _initGate = null;
+      await gate;
+    }
     if (_autoPlay.value ||
         (plPlayerController.preInitPlayer && !plPlayerController.processing) &&
             (isFileSource
@@ -717,6 +723,12 @@ class VideoDetailController extends GetxController
     }
     return null;
   }
+
+  /// 本页首次初始化播放器前要等的信号（转场动画播完 / 兑底超时）
+  Future<void>? _initGate;
+
+  /// 让本页的播放器初始化等到 [gate] 完成再做。只生效一次。
+  void deferPlayerInit(Future<void> gate) => _initGate = gate;
 
   Future<void> playerInit({
     bool? autoplay,

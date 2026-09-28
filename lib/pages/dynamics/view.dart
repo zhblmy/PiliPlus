@@ -308,50 +308,54 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
 
     // 与首页完全同款：顶栏是「悬浮在本页内容之上的液体玻璃层」，
     // 中间不隔 Scaffold/Material（否则 BackdropFilter 取不到下层内容，
-    // 看着就是一条纯色条）。玻璃高度 = 状态栏那片 + 42 + 面板当前高度，
-    // 严格等于让给内容的 inset。
-    Widget page() {
-      final double panelHeight = upPanelHeight();
-      return Stack(
-        children: [
-          Positioned.fill(
-            child: TopBarInset(
-              value: statusBarHeight + _kAppBarHeight + panelHeight,
-              child: content,
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: LiquidGlass(
-              shape: kGlassTopBarShape,
-              blur: 16,
-              color: colorScheme.surface.withValues(
-                alpha: colorScheme.isDark ? 0.5 : 0.62,
-              ),
-              shadowColor: Colors.black.withValues(
-                alpha: colorScheme.isDark ? 0.4 : 0.1,
-              ),
-              child: Column(
-                mainAxisSize: .min,
-                children: [
-                  SizedBox(height: statusBarHeight),
-                  // 卡死 42 高：Column 高度自适应时 TabBar 会按自己的
-                  // preferredSize(46+2=48) 把玻璃顶栏撑高，比 inset 多 6px
-                  SizedBox(height: _kAppBarHeight, child: appBar),
-                  // 「顶部」UP 面板（跟首页搜索栏一样长在玻璃上，一起收起）
-                  topPanelArea(panelHeight),
-                ],
-              ),
-            ),
-          ),
-        ],
+    // 看着就是一条纯色条）。玻璃铺满整宽、盖住状态栏，内容从它下方穿过。
+    //
+    // 结构：状态栏那片 → 分类 Tab 栏 → 可收起的「顶部」UP 面板（在 Tab 栏下方）。
+    // 性能：玻璃实例建一次，收起过程中**只重建 UP 面板那一层包装**，
+    // 不会每帧重建 BackdropFilter。
+    Widget glassTopBar() {
+      final panel = topPanel;
+      return LiquidGlass(
+        shape: kGlassTopBarShape,
+        blur: 16,
+        color: colorScheme.surface.withValues(
+          alpha: colorScheme.isDark ? 0.5 : 0.62,
+        ),
+        shadowColor: Colors.black.withValues(
+          alpha: colorScheme.isDark ? 0.4 : 0.1,
+        ),
+        child: Column(
+          mainAxisSize: .min,
+          children: [
+            SizedBox(height: statusBarHeight),
+            // 卡死 42 高：Column 高度自适应时 TabBar 会按自己的
+            // preferredSize(46+2=48) 把玻璃顶栏撑高，比 inset 多 6px
+            SizedBox(height: _kAppBarHeight, child: appBar),
+            // 「顶部」UP 面板（跟首页搜索栏一样长在玻璃上，一起收起）
+            if (panel != null)
+              if (upPanelOffset == null)
+                panel
+              else
+                Obx(() => topPanelArea(upPanelHeight())),
+          ],
+        ),
       );
     }
 
-    // 面板收起过程中每帧都要重算高度，所以要包一层 Obx（首页搜索栏也是这么做的）
-    final Widget stack = upPanelOffset == null ? page() : Obx(page);
+    // 让内容为玻璃顶栏让位（面板收起过程中高度随之变小）
+    Widget bodyWithInset() => TopBarInset(
+      value: statusBarHeight + _kAppBarHeight + upPanelHeight(),
+      child: content,
+    );
+
+    final Widget stack = Stack(
+      children: [
+        Positioned.fill(
+          child: upPanelOffset == null ? bodyWithInset() : Obx(bodyWithInset),
+        ),
+        Positioned(top: 0, left: 0, right: 0, child: glassTopBar()),
+      ],
+    );
 
     // 抽屉模式必须要 Scaffold（DrawerButton/EndDrawerButton 要能 Scaffold.of
     // 找到它），这时玻璃只能放在 Scaffold.body 里；其余情况（默认的左/右/顶部

@@ -274,8 +274,13 @@ abstract final class Pref {
 
   /// Android 专属：mpv 视频输出后端，形如 `vo=gpu-next,gpu-api=vulkan`。
   /// 空字符串 = 不设置（完全用 mpv 默认值）—— 性能报告 PL-02
-  static String get videoOutputBackend =>
-      _setting.get(SettingBoxKey.videoOutputBackend, defaultValue: '');
+  ///
+  /// 默认已改为 `vo=gpu-next,gpu-api=vulkan`（开启 Vulkan 输出）。
+  /// 想回退成完全跟随 mpv 默认值：设置 → 播放设置 → 视频输出后端 → 选「默认」。
+  static String get videoOutputBackend => _setting.get(
+    SettingBoxKey.videoOutputBackend,
+    defaultValue: Platform.isAndroid ? 'vo=gpu-next,gpu-api=vulkan' : '',
+  );
 
   /// 场景化刷新率（性能报告 MI-02）：
   /// 播放视频（内容 ≤ 45fps）/ 低功耗降档 / 画中画时降到 60Hz 档，退出后恢复
@@ -800,14 +805,14 @@ abstract final class Pref {
   ///
   /// 另外注意：GetX 的路由不走 `ThemeData.pageTransitionsTheme`，
   /// 改 `lib/utils/theme_utils.dart` 里的 `pageTransitionsTheme` 对本 App 无效。
-  static Transition get pageTransition => Transition.values[_setting.get(
-    SettingBoxKey.pageTransition,
-    defaultValue: _defaultPageTransition.index,
-  )];
+  static Transition get pageTransition =>
+      Transition.values[_setting.get(
+        SettingBoxKey.pageTransition,
+        defaultValue: _defaultPageTransition.index,
+      )];
 
-  static Transition get _defaultPageTransition => Platform.isAndroid
-      ? Transition.sharedAxis
-      : Transition.native;
+  static Transition get _defaultPageTransition =>
+      Platform.isAndroid ? Transition.sharedAxis : Transition.native;
 
   static bool get enableQuickDouble =>
       _setting.get(SettingBoxKey.enableQuickDouble, defaultValue: true);

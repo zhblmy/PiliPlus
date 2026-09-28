@@ -37,6 +37,9 @@ import 'package:PiliPlus/pages/video/introduction/ugc/controller.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/view.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/widgets/page.dart';
 import 'package:PiliPlus/pages/video/introduction/ugc/widgets/season.dart';
+
+import 'dart:async';
+
 import 'package:PiliPlus/pages/video/member/controller.dart';
 import 'package:PiliPlus/pages/video/member/view.dart';
 import 'package:PiliPlus/pages/video/related/view.dart';
@@ -165,6 +168,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       pgcIntroController = Get.put(PgcIntroController(), tag: heroTag);
     }
 
+    _deferPlayerInitUntilTransitionEnd();
     videoSourceInit();
 
     addObserverMobile(this);
@@ -179,6 +183,27 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
         ..addStatusLister(playerListener)
         ..addPositionListener(positionListener);
     }
+  }
+
+  /// 转场动画（cupertino/native，300ms）期间先把播放器初始化挂起。
+  ///
+  /// 取流请求照旧立刻发起（纯网络，不占 UI），但真正 `open` 媒体
+  /// （重建解码器 + 纹理、上屏首帧）是重活，正好会压在转场收尾那一帧上：
+  /// 表现就是「转场最后卡一下」和「转场时播放器闪一下」。
+  /// 所以推入本页时拿一个信号把这一步卡到转场播完之后；
+  /// 兑底 600ms（动画被静音时 runAfterRouteAnimation 会晚一步）。
+  void _deferPlayerInitUntilTransitionEnd() {
+    final gate = Completer<void>();
+    videoDetailController.deferPlayerInit(gate.future);
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!gate.isCompleted) gate.complete();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      runAfterRouteAnimation(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+    });
   }
 
   void positionListener(Duration position) {

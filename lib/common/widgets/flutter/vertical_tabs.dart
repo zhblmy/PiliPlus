@@ -1654,11 +1654,8 @@ class _VerticalTabBarState extends State<VerticalTabBar> {
       tabCenter +
           paddingTop -
           viewportWidth / 2.0 +
-          (_mainCtr.useBottomNav &&
-                  switch (_mainCtr.barHideType) {
-                    .instant => _mainCtr.showBottomBar?.value ?? true,
-                    .sync => (_mainCtr.barOffset?.value ?? 0) == 0,
-                  }
+          // 底栏可见时多留一份高度，免得最后一个 Tab 被它盖住
+          (_mainCtr.useBottomNav && (_mainCtr.showBottomBar?.value ?? true)
               ? 80.0
               : 0.0),
       minExtent,
