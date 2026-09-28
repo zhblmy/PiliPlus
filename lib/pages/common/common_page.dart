@@ -15,6 +15,87 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
 
   bool get needsCorrection => false;
 
+  /// 本页顶栏是否为「页面级悬浮层 + 滚动驱动的 pinned sliver 让位」。
+  ///
+  /// 是则为 false：不再写共享的 [MainController.barOffset]（顶栏收起由滚动位置
+  /// 直接驱动），也不需要 correctBy 偷滚动（空间由 pinned sliver 原生让出）。
+  bool get useBarOffset => true;
+
+  /// pinned 顶栏的收起量程（0 = 本页没有这种顶栏）：用来做「抬手补到端点」。
+  double get pinnedHeaderExtent => 0.0;
+
+  /// 上面那个顶栏对应的滚动控制器（当前可见 Tab 的那个）
+  ScrollController? get pinnedHeaderScrollController => null;
+
+  bool _pinnedScrollUp = false;
+  bool _pinnedSettling = false;
+
+  /// 这条滚动通知是哪个列表发出来的。
+  ///
+  /// **不要**用 `identical(notification.metrics, position)` 判断：`ScrollPosition`
+  /// 派发通知时传的是 `copyWith()` 出来的 `ScrollMetrics` 快照，永远不等于 position
+  /// 本身（拿它做白名单会把所有通知都过滤掉）。`notification.context` 是派发者里
+  /// GestureDetector 的 context、位置在 Scrollable 内部，所以能拿回那个 Scrollable。
+  ScrollPosition? dispatchPositionOf(ScrollNotification notification) {
+    final ctx = notification.context;
+    return ctx == null ? null : Scrollable.maybeOf(ctx)?.position;
+  }
+
+  /// 抬手/惯性结束后的收尾补间：停在收起区间（0 < pixels < 量程）时补到端点，
+  /// 否则搜索行/面板会停在半截。
+  ///
+  /// 两个方向都补（收起到端点 / 展开回 0）：这里让位是**真滚动**，补回 0 会让列表回到
+  /// 顶部，但只在 pixels 小于量程（一屏顶部那 50～80 px）时才补，观感就是「松手后归位」。
+  bool onPinnedHeaderNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != .vertical) return false;
+    final controller = pinnedHeaderScrollController;
+    if (controller == null || !controller.hasClients) return false;
+    final positions = controller.positions;
+    final dispatcher = dispatchPositionOf(notification);
+    if (positions.length != 1 ||
+        dispatcher == null ||
+        !identical(dispatcher, positions.first)) {
+      return false;
+    }
+    if (notification is ScrollUpdateNotification) {
+      final delta = notification.scrollDelta;
+      if (delta != null && delta != 0) _pinnedScrollUp = delta > 0;
+      return false;
+    }
+    if (notification is! ScrollEndNotification || _pinnedSettling) return false;
+    final double pixels = notification.metrics.pixels;
+    final double target;
+    if (_pinnedScrollUp) {
+      final double extent = pinnedHeaderExtent;
+      if (pixels <= 0 || pixels >= extent) return false;
+      // 已经滚到底、补也补不动了：否则「列表本身就短于量程」时会
+      // animateTo → ScrollEnd → 再 animateTo 无限空转（每 220ms 起一次动画）
+      if (pixels >= notification.metrics.maxScrollExtent) return false;
+      target = extent;
+    } else {
+      // 下滑：回到展开态
+      if (pixels <= 0) return false;
+      target = 0.0;
+    }
+    _pinnedSettling = true;
+    // 通知回调里不能直接改滚动活动，下一帧再动
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_pinnedSettling) return;
+      if (!controller.hasClients) {
+        _pinnedSettling = false;
+        return;
+      }
+      controller
+          .animateTo(
+            target,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() => _pinnedSettling = false);
+    });
+    return false;
+  }
+
   /// 收尾补间定时器：滚动（含惯性）结束后把栏补完到端点，
   /// 否则抬手后栏会停在一半——看起来“卡在下面一点”。
   Timer? _settleTimer;
@@ -39,7 +120,13 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
   }
 
   Widget onBuild(Widget child) {
-    if (_barOffset != null) {
+    if (pinnedHeaderExtent > 0) {
+      child = NotificationListener<ScrollNotification>(
+        onNotification: onPinnedHeaderNotification,
+        child: child,
+      );
+    }
+    if (useBarOffset && _barOffset != null) {
       return NotificationListener<ScrollNotification>(
         onNotification: onNotificationType2,
         child: child,
@@ -127,7 +214,8 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
         _stopSettle();
         return;
       }
-      final double value = from + delta * Curves.easeOutCubic.transform(elapsed);
+      final double value =
+          from + delta * Curves.easeOutCubic.transform(elapsed);
       barOffset.value = value;
       last = value;
     });

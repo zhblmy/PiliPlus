@@ -33,13 +33,147 @@ class DynamicsPage extends StatefulWidget {
 }
 
 class _DynamicsPageState extends CommonPageState<DynamicsPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   final _dynamicsController = Get.putOrFind(DynamicsController.new);
   UpPanelPosition get upPanelPosition => _dynamicsController.upPanelPosition;
   late final MainController _mainController = Get.find<MainController>();
 
   @override
   bool get wantKeepAlive => true;
+
+  /// 顶栏收起由滚动通知驱动（见 _onScrollNotification），不再写全局 barOffset
+  @override
+  bool get useBarOffset => false;
+
+  /// 收起量程 = 「顶部」UP 面板高度。
+  /// 即时模式不需要补间（动画自己会到端点）。
+  @override
+  double get pinnedHeaderExtent {
+    if (_instant ||
+        !_mainController.useBottomNav ||
+        !MediaQuery.sizeOf(context).isPortrait ||
+        upPanelPosition != .top) {
+      return 0.0;
+    }
+    return Pref.hideTopBar ? _kUpPanelTopHeight : 0.0;
+  }
+
+  @override
+  ScrollController? get pinnedHeaderScrollController =>
+      _dynamicsController.controller?.scrollController;
+
+  /// 当前可见 Tab 的滚动位置（未挂载/多实例时返回 null）
+  ScrollPosition? _currentScrollPosition() {
+    final controller = _dynamicsController.controller?.scrollController;
+    if (controller == null || !controller.hasClients) return null;
+    final positions = controller.positions;
+    return positions.length == 1 ? positions.first : null;
+  }
+
+  /// 顶栏当前收起进度（px，0..量程）；玻璃、让位 sliver 共用同一个值。
+  ///
+  /// * 同步模式：= 可见列表的滚动位置（滚动通知驱动，跟手 1:1）；
+  /// * 即时模式：= 收起动画的当前进度（上滑收起、下滑出现）。
+  final ValueNotifier<double> _barCollapse = ValueNotifier<double>(0.0);
+
+  /// 即时模式的收起动画（0 = 完全展开，1 = 完全收起）
+  late final AnimationController _barAnim;
+
+  /// 当前认下的那个列表（切 Tab / 切分区会变）
+  ScrollPosition? _activePosition;
+
+  /// 「即时」模式：按滚动方向两态收起/出现
+  bool get _instant => _mainController.barHideType == .instant;
+
+  /// 面板是否可收起（与 build 里的 `topPanelInGlass && Pref.hideTopBar` 同义）
+  bool get _panelCollapsible =>
+      _mainController.useBottomNav &&
+      Pref.hideTopBar &&
+      upPanelPosition == .top;
+
+  void _onBarAnimTick() {
+    _barCollapse.value = _kUpPanelTopHeight * _barAnim.value;
+  }
+
+  /// 即时模式：上滑（内容上移 = [ScrollDirection.reverse]）收起、下滑出现
+  void _animateBar(bool hide) {
+    if (hide) {
+      _barAnim.forward();
+    } else {
+      _barAnim.reverse();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _dynamicsController.tabController.addListener(_onTabChanged);
+    _barAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    )..addListener(_onBarAnimTick);
+  }
+
+  /// 切分类：换列表了，先把收起进度对齐到新 Tab 的真实位置。
+  /// 即时模式不看滚动位置，顶栏状态不跟着 Tab 重置。
+  void _onTabChanged() {
+    _activePosition = null;
+    if (_instant) return;
+    _barCollapse.value =
+        _currentScrollPosition()?.pixels.clamp(0.0, _kUpPanelTopHeight) ?? 0.0;
+  }
+
+  @override
+  void dispose() {
+    _dynamicsController.tabController.removeListener(_onTabChanged);
+    _barAnim.dispose();
+    _barCollapse.dispose();
+    super.dispose();
+  }
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (!_panelCollapsible) return false;
+    final metrics = notification.metrics;
+    if (metrics.axis != .vertical) return false;
+    final bool isUser = notification is UserScrollNotification;
+    if (!isUser &&
+        notification is! ScrollUpdateNotification &&
+        notification is! ScrollMetricsNotification) {
+      return false;
+    }
+    if (_instant) {
+      // 即时模式只关心方向（方向是全局 UI 状态），不关心是哪个列表，
+      // 也不依赖 ScrollController 能不能解析出来 —— 免得漏掉收起/出现。
+      if (isUser) {
+        switch (notification.direction) {
+          case .forward:
+            // 下滑（内容下移）：出现
+            _animateBar(false);
+          case .reverse:
+            // 上滑（内容上移）：收起隐藏
+            _animateBar(true);
+          case .idle:
+            // 滚动结束时还会再发一个 idle，不能当成「出现」
+            break;
+        }
+      }
+      return false;
+    }
+    // 同步模式：必须知道是哪个列表 —— 收起进度就是它的滚动位置。
+    // 只认「当前 Tab 的列表」：保活的其他 Tab、内嵌的竖直列表（含非玻璃模式
+    // 下位于 body 里的 UP 面板）都会把通知冒泡上来。
+    final position = dispatchPositionOf(notification);
+    if (position == null) return false;
+    if (!identical(position, _activePosition)) {
+      final current = _currentScrollPosition();
+      if (current == null || !identical(position, current)) return false;
+      _activePosition = position;
+    }
+    if (!isUser) {
+      _barCollapse.value = metrics.pixels.clamp(0.0, _kUpPanelTopHeight);
+    }
+    return false;
+  }
 
   Widget _createDynamicBtn(ColorScheme colorScheme, {bool isRight = true}) =>
       Container(
@@ -156,12 +290,9 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
     final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
     // 「顶部」位置的 UP 面板会像首页的搜索栏那样放进玻璃顶栏里
     final bool topPanelInGlass = glassBar && upPanelPosition == .top;
-    // 面板随滚动收起 / 下拉再展开：开关与首页搜索栏共用同一个「滚动隐藏顶栏」，
-    // 收起进度也共用同一个 barOffset（首页那套跟随手指的同步机制）。
-    // 注：「瞬时」隐藏模式下 barOffset 为空，此处面板保持不变（不收起）。
-    final RxDouble? upPanelOffset = topPanelInGlass && Pref.hideTopBar
-        ? _mainController.barOffset
-        : null;
+    // 面板随滚动收起 / 下拉再展开：与首页搜索栏共用同一个「滚动隐藏顶栏」开关。
+    // 收起进度由「当前 Tab 的滚动位置」直接驱动（不再用全局 barOffset）。
+    final bool collapsiblePanel = topPanelInGlass && Pref.hideTopBar;
     // 玻璃顶栏占掉的高度：状态栏那片 + 分类 Tab 栏（+ 顶部 UP 面板）
     final double barInset = glassBar
         ? statusBarHeight +
@@ -276,32 +407,36 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
 
     // 与首页同款：状态栏那片也交给玻璃顶栏（不跟着内容收起/展开），
     // 所以内容要自己让出 inset，见 TopBarInsetSpacer。
-    final Widget content = onBuild(child);
+    final Widget content = onBuild(
+      NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotification,
+        child: child,
+      ),
+    );
 
-    /// 「顶部」UP 面板的当前高度（0 = 已完全收起）。
-    /// barOffset 的量程是 Style.topBarHeight(52)、而面板高 76，要按比例换算，
-    /// 否则收到底时面板高度减不到 0，会剩下一条空玻璃。
-    double upPanelHeight() {
-      if (!topPanelInGlass) return 0.0;
-      if (upPanelOffset case final offset?) {
-        return _kUpPanelTopHeight * (1 - offset.value / Style.topBarHeight);
-      }
-      return _kUpPanelTopHeight;
-    }
-
-    /// 玻璃顶栏里的「顶部」UP 面板，收起过程中按当前高度裁切。
+    /// 玻璃顶栏里的「顶部」UP 面板，收起时按当前高度裁切。
     /// CustomHeightWidget 只会把内容往上挪、并不自己裁剪（和 AnimatedContainer
     /// 一样），所以外面必须套一层 ClipRect，否则会画到分类 Tab 栏上；
     /// 这与首页搜索栏的处理完全一致。
-    Widget topPanelArea(double panelHeight) {
-      final panel = topPanel;
-      if (panel == null) return const SizedBox.shrink();
-      if (upPanelOffset == null) return panel;
+    Widget topPanelArea(double panelHeight, Widget panel) {
       return ClipRect(
         child: CustomHeightWidget(
           height: panelHeight,
           offset: Offset(0, panelHeight - _kUpPanelTopHeight),
           child: panel,
+        ),
+      );
+    }
+
+    /// 用收起进度驱动面板收起（同步模式跟手 1:1；即时模式跟随收起动画）
+    Widget scrollDrivenPanel(Widget panel) {
+      return ValueListenableBuilder<double>(
+        valueListenable: _barCollapse,
+        // child 是那个静态面板实例：每帧只重建裁切那一层
+        child: panel,
+        builder: (context, collapse, child) => topPanelArea(
+          _kUpPanelTopHeight - collapse.clamp(0.0, _kUpPanelTopHeight),
+          child!,
         ),
       );
     }
@@ -333,25 +468,27 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
             SizedBox(height: _kAppBarHeight, child: appBar),
             // 「顶部」UP 面板（跟首页搜索栏一样长在玻璃上，一起收起）
             if (panel != null)
-              if (upPanelOffset == null)
-                panel
-              else
-                Obx(() => topPanelArea(upPanelHeight())),
+              collapsiblePanel ? scrollDrivenPanel(panel) : panel,
           ],
         ),
       );
     }
 
-    // 让内容为玻璃顶栏让位（面板收起过程中高度随之变小）
-    Widget bodyWithInset() => TopBarInset(
-      value: statusBarHeight + _kAppBarHeight + upPanelHeight(),
-      child: content,
-    );
-
     final Widget stack = Stack(
       children: [
         Positioned.fill(
-          child: upPanelOffset == null ? bodyWithInset() : Obx(bodyWithInset),
+          // 让位交给 TopBarInsetSpacer；collapse 是玻璃/让位共用的收起进度，
+          // followScroll 区分「同步（滚动自己让位）」与「即时（让位跟动画收缩）」。
+          // 不收起时 minValue 必须等于 value，否则内容会缩到面板里去。
+          child: TopBarInset(
+            value: barInset,
+            minValue: collapsiblePanel
+                ? statusBarHeight + _kAppBarHeight
+                : barInset,
+            collapse: _barCollapse,
+            followScroll: !_instant,
+            child: content,
+          ),
         ),
         Positioned(top: 0, left: 0, right: 0, child: glassTopBar()),
       ],

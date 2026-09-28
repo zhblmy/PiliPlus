@@ -1,5 +1,6 @@
 import 'dart:ui' show BlurStyle, ImageFilter, MaskFilter, PathOperation;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 /// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
@@ -259,34 +260,83 @@ class _GlassShadowPainter extends CustomPainter {
 
 /// 玻璃顶栏（悬浮样式）需要预留的顶部内边距。
 ///
-/// 首页顶栏改成悬浮玻璃层后，滚动内容会从它下方穿过；为了让内容一开始不被
-/// 压住，各 Tab 页的滚动视图需要在最前面留出这段空白 —— 用
-/// [TopBarInsetSpacer] 即可，值为 0 时不会有任何影响。
+/// 首页/动态页的顶栏是**页面 Stack 里铺满整宽的悬浮玻璃层**（位于 TabBarView 之外，
+/// 所以切分类 Tab 时不动、也不会被各页自己的左右留白切窄）；
+/// 各 Tab 页的滚动视图只需要在 `slivers` 最前面放一个 [TopBarInsetSpacer] 让出空间。
+/// 值为 0 时不会有任何影响。
 class TopBarInset extends InheritedWidget {
   const TopBarInset({
     super.key,
     required this.value,
+    double? minValue,
+    this.collapse,
+    this.followScroll = true,
     required super.child,
-  });
+  }) : minValue = minValue ?? value;
 
+  /// 顶栏完全展开时的高度（收起量程就是 `value - minValue`）
   final double value;
 
-  static double of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<TopBarInset>()?.value ?? 0.0;
+  /// 顶栏收到最小时仍要保留的高度（状态栏那片 + 分类 Tab 栏）
+  final double minValue;
+
+  /// 顶栏当前的收起进度（px，0..`value - minValue`），由页面驱动：
+  /// * 同步模式 = 可见列表的滚动位置（跟手 1:1）；
+  /// * 即时模式 = 收起动画的进度（上滑收起、下滑出现）。
+  ///
+  /// 顶栏当前高度 = `value - collapse`（超出量程的部分自动 clamp）。
+  /// 玻璃、让位 sliver、以及固定不滚动又要与顶栏底部对齐的元素
+  /// （如排行榜左侧竖排 Tab 栏）都用同一个值，天然不会对不上。
+  final ValueListenable<double>? collapse;
+
+  /// 让位（空间）是否由滚动本身完成。
+  /// * true（同步模式）：让位 sliver 高度固定为 [value]，内容与手指 1:1 跟手，
+  ///   滚动到哪就是哪（不需要 any 补间）；
+  /// * false（即时模式）：让位高度跟随 [collapse] 收缩，否则杆收起后顶上会留一条空白。
+  final bool followScroll;
+
+  static TopBarInset? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<TopBarInset>();
+
+  /// 顶栏完全展开时的高度（需要动态高度的用 [maybeOf] + [collapse] 自己算）
+  static double of(BuildContext context) => maybeOf(context)?.value ?? 0.0;
 
   @override
-  bool updateShouldNotify(TopBarInset oldWidget) => value != oldWidget.value;
+  bool updateShouldNotify(TopBarInset oldWidget) =>
+      value != oldWidget.value ||
+      minValue != oldWidget.minValue ||
+      collapse != oldWidget.collapse ||
+      followScroll != oldWidget.followScroll;
 }
 
-/// 放在 `CustomScrollView.slivers` 最前面的占位 sliver，
-/// 高度等于当前玻璃顶栏的高度（没有玻璃顶栏时为 0）。
+/// 放在 `CustomScrollView.slivers` 最前面的让位 sliver（玻璃本体由页面 Stack 画，
+/// 这里只是占位、什么都不画）。
+///
+/// * 同步模式（[TopBarInset.followScroll]）：高度固定为 [TopBarInset.value]，
+///   于是内容顶部 = `value - 滚动位置`，与玻璃的收起严格同步、原生 1:1；
+/// * 即时模式：高度 = `value - 收起进度`，让位跟着收起动画收缩。
 class TopBarInsetSpacer extends StatelessWidget {
   const TopBarInsetSpacer({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final inset = TopBarInset.maybeOf(context);
+    final double maxExtent = inset?.value ?? 0.0;
+    final double minExtent = (inset?.minValue ?? maxExtent).clamp(
+      0.0,
+      maxExtent,
+    );
+    final collapse = inset?.collapse;
+    if (collapse == null || inset!.followScroll || minExtent >= maxExtent) {
+      return SliverToBoxAdapter(child: SizedBox(height: maxExtent));
+    }
     return SliverToBoxAdapter(
-      child: SizedBox(height: TopBarInset.of(context)),
+      child: ValueListenableBuilder<double>(
+        valueListenable: collapse,
+        builder: (context, value, _) => SizedBox(
+          height: maxExtent - value.clamp(0.0, maxExtent - minExtent),
+        ),
+      ),
     );
   }
 }

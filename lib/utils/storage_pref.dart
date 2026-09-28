@@ -732,10 +732,12 @@ abstract final class Pref {
     defaultValue: PlatformUtils.isMobile,
   );
 
+  /// 顶/底栏收起类型：默认「即时」——上滑收起隐藏、下滑出现（两态）；
+  /// 想改成跟手 1:1 的「同步」在设置里切（需重启）。
   static BarHideType get barHideType =>
       BarHideType.values[_setting.get(
         SettingBoxKey.barHideType,
-        defaultValue: BarHideType.sync.index,
+        defaultValue: BarHideType.instant.index,
       )];
 
   static bool get enableSearchWord =>

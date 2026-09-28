@@ -149,6 +149,144 @@ v1 把顶栏做成 pinned sliver 插进各 Tab 页的 `CustomScrollView`，实�
 
 ---
 
+## 八、v4 追加：pinned sliver 让位 + 页面级静态玻璃（空间与外观解耦）
+
+### 背景：v2 方案的不足
+
+v2 为了修掉 v1 的三个毛病，把「让位」也交回给了页面：各 Tab 页自己算内边距 + `correctBy` 偷滚动，
+首页用共享的 `barOffset` 驱动、动态页再按比例把 52 的量程换算成 76 的面板高度，收尾补间还是 `Timer.periodic`。
+代价是：内容与手指不是原生 1:1；`TopBarInset` 的 `value` 每帧变，各 Tab 页每帧重排；比例换算容易对不齐。
+
+### v4 的做法：把「空间」和「外观」拆开
+
+| | v1（被否） | v2（回退） | **v4（本次）** |
+| --- | --- | --- | --- |
+| 让位（空间） | 各 Tab 页的 `SliverPersistentHeader` 里画玻璃 | 改内边距 + `correctBy` 偷滚动 | 各 Tab 页 `TopBarInsetSpacer`：**不可见 pinned sliver**（子节点 `SizedBox.expand()`，只占位不画东西） |
+| 外观（玻璃） | 同上（在 Tab 内容里，会跟着切 Tab 横滑） | 页面 `Stack` 里的静态悬浮层 | **页面 `Stack` 里的静态悬浮层**（在 `TabBarView` 之外，铺满整宽） |
+| 收起驱动 | sliver 自己 | 全局 `barOffset`（共享、滞后） | **滚动通知驱动的页面级 `ValueNotifier`**（每个滚动帧都发，1:1；用 `metrics` 实例做白名单） |
+| 收尾补间 | sliver + `animateTo` | `Timer.periodic` 写 `barOffset` | `animateTo(extent, 220ms, easeOutCubic)`（原生、无定时器） |
+
+关键点：
+
+1. **让位就是一个普通占位 sliver**（`TopBarInsetSpacer` → `SliverToBoxAdapter`）：玻璃本体由页面 `Stack` 画，
+   这里只占高度。同步模式高度固定为展开高度，即时模式高度 = 展开高度 − 收起进度。
+   （v4 早期用过 `SliverPersistentHeader(pinned: true)`，实测与普通占位 sliver 的几何**完全等价**——
+   内容顶部都是 `展开高度 − 滚动位置`，见下面「复核修复」第 1 条，所以已删掉。）
+2. **玻璃在 `TabBarView` 之外**：切分类 Tab 时不再横滑；不会被各页自己的左右 12 px 留白切窄；
+   也天然覆盖排行榜左侧竖排 Tab 栏那一整宽区域。
+3. **同一个进度驱动**：页面把所有竖向列表的滚动通知汇总成一个 `ValueNotifier<double>`
+   （只认当前可见 Tab 的列表，用 `metrics` 实例做白名单），玻璃、让位 sliver、排行榜左侧竖栏都读它，
+   算出的高度与让位严格相等，不会出现「让位比玻璃少一点、漏出背景」。
+4. **`TopBarInset` 的值都是常量**（`value` = 展开高度，`minValue` = 收起后仍保留的高度），
+   不再每帧 `updateShouldNotify`（少了每帧一层 `InheritedWidget` 通知与各 Tab 页重排）；
+   收起进度通过 `TopBarInset.collapse`（`ValueListenable`）下发，
+   `followScroll` 告诉让位 sliver 是「滚动自己让位（空间固定）」还是「空间跟着收起进度收缩」。
+5. **收尾补间回归原生**：`CommonPageState` 重新加回 `pinnedHeaderExtent` /
+   `pinnedHeaderScrollController` / `onPinnedHeaderNotification`——手指抬起（`ScrollEndNotification`
+   且本次是上滑）时 `animateTo(extent, 220ms, easeOutCubic)` 补到端点；页面 `useBarOffset => false`
+   后，`Timer.periodic` 那套完全不参与（每个通知还先用 `identical(positions.first, metrics)` 过滤，
+   避免被保活的邻页滚动误触发）。
+6. 排行榜左侧竖排 Tab 栏用 `TopBarInset.collapse` 跟着顶栏一起上移（见下面「复核修复」第 5 条）。
+
+### 四个问题的对应修复
+
+| # | 问题 | 原因 | v4 修法 |
+| --- | --- | --- | --- |
+| 1 | 切分类 Tab 时整个顶栏跟着横滑 | v1 的玻璃长在 Tab 内容里 | 玻璃移到页面 `Stack`（`TabBarView` 之外） |
+| 2 | 排行榜左侧一栏上方空白 | 用展开高度做 padding | 改用 `TopBarInset.collapse` 跟顶栏一起动（见复核修复第 5 条） |
+| 3 | 直播/推荐顶栏模糊两侧有缝 | 玻璃在带 12 px 外边距的页面内容里 | 玻璃铺满整宽，在内容之外 |
+| 4 | 动态页顺序 + 切 Tab 时顶栏/面板要静止 | 顺序颠倒 + 玻璃在 Tab 内 | `状态栏 → Tab 栏 → UP 面板`，整块在 `TabBarView` 之外 |
+
+### v4 改动文件
+
+| 文件 | 变动 |
+| --- | --- |
+| `lib/common/widgets/liquid_glass.dart` | `TopBarInset` 增加 `minValue` / `collapse` / `followScroll`；`TopBarInsetSpacer` 简化成普通占位 sliver（同步固定高度 / 即时随收起收缩） |
+| `lib/pages/common/common_page.dart` | 恢复 `pinnedHeaderExtent` / `pinnedHeaderScrollController` / `onPinnedHeaderNotification`（仅同步模式生效）；新增 `useBarOffset` 开关 |
+| `lib/pages/home/view.dart` | 让位交给 sliver；滚动通知 + `ValueNotifier`/`AnimationController` 驱动收起；`TopBarInset(collapse:, followScroll:)` |
+| `lib/pages/dynamics/view.dart` | 同上（面板 76）；`TopBarInset(value: barInset, minValue: 状态栏 + Tab 栏)` |
+| `lib/pages/rank/view.dart` | 左侧竖排 Tab 栏用 `TopBarInset.collapse` 跟着顶栏一起动 |
+| `lib/utils/storage_pref.dart` | `barHideType` 默认值 `sync` → `instant`（上滑收起/下滑出现成为默认） |
+
+### 复核修复（本次自查发现并修掉的问题）
+
+1. （历史）**pinned 头部的子节点不能是 0 高度。** 当时用 `SliverPersistentHeader(pinned: true)` 时，
+   `layoutExtent = clamp(maxExtent - scrollOffset, 0, paintExtent)` 而 `paintExtent` 受子节点实际高度影响：
+   `SizedBox.shrink()` 会让 `paintExtent = 0`、`layoutExtent = 94`，debug 下直接抛
+   `SliverGeometry is not valid: layoutExtent exceeds paintExtent`（`SizedBox.expand()` 可以绕过）。
+   后来实测这个 pinned 头部与普通占位 sliver 的几何完全等价（都是 `展开高度 − 滚动位置`），
+   于是直接删掉了 pinned 头部——问题连同组件一起消失。
+2. **收尾补间会空转。** 列表本身就短于量程时（`maxScrollExtent < 量程`），`animateTo(量程)` 只能停在 `maxScrollExtent`，
+   抬手结束又触发一次补间 → 每 220ms 起一次动画、永不停。已加 `pixels >= maxScrollExtent` 判断。
+3. **首帧 / 切到未访问的 Tab 时拿不到 `ScrollPosition`。** `HomeTabType.ctr` 内部是 `Get.find`，而 `TabBarView`
+   的页面是懒建的（而且在 layout 阶段才建）：首帧调用会抛异常；就算兜成 null，玻璃也只能渲染成「完全展开」，
+   之后**没有任何东西会让它重新订阅** → 第一次滚动时让位（sliver）在收、玻璃却纹丝不动，
+   表现为内容被搜索栏多盖 52px。→ 驱动源改成**滚动通知 + 页面级 `ValueNotifier`**（每个滚动帧都发，天然 1:1，
+   也不存在订阅生命周期），并用 `metrics` 实例做白名单（保活的其他 Tab、卡片里内嵌的竖直列表、UP 面板都不会把顶栏带偏）。
+4. **切分区后订阅失效。** 排行榜/番剧里还有一层 Tab，外层（首页）的 `TabController` 不会动，
+   基于 `ScrollPosition` 的订阅会一直盯着旧分区的列表 → 顶栏停在旧状态（与让位对不上，出现一条空白）。
+   改成通知驱动后，新分区的列表一落位就会重新认一次并对齐；切 Tab 时再按新 Tab 的真实位置额外对齐一次。
+5. **排行榜左侧竖栏给常量两个方向都不对。** 只给「收起后的高度」会一直贴在最上面、被搜索栏盖掉一项（而且点不到）；
+   只给展开高度又会在收起后留一条空白。原实现本来就是跟着顶栏动态变的，v4 用 `TopBarInset.offset` 恢复了这个行为，
+   而且比原来省：原来每帧重排整个分区页，现在只重建那一层包装。
+6. 玻璃/面板里的静态内容改为作为 `ValueListenableBuilder` 的 `child` 传下去，重建范围更明确。
+
+### 即时模式：「上滑收起隐藏，下滑出现」
+
+设置里的「顶/底栏收起类型」有两个值：**同步**（跟手 1:1）与**即时**（上滑收起/下滑出现）。
+**默认已改成「即时」**（`storage_pref.dart` 里 `barHideType` 的默认值 `sync` → `instant`）：
+这样新装、或没动过该设置的机器直接就是「上滑收起隐藏、下滑出现」（与底栏两态一致）；
+想跟手 1:1 的到设置里切「同步」即可（改完需重启）。
+
+| 模式 | 玻璃 / 让位怎么动 |
+| --- | --- |
+| 同步 `sync` | 收起进度 = 可见列表的滚动位置，跟手 1:1；让位空间固定，滚动本身就完成让位；抬手停在中途时补到端点（`animateTo` 220ms `easeOutCubic`） |
+| 即时 `instant` | 滚动**方向**决定两态：上滑（内容上移 = `ScrollDirection.reverse`）→ 收起隐藏；下滑（`forward`）→ 出现。用 220ms `easeOutCubic` 的 `AnimationController` 驱动同一个收起进度，让位空间一起收缩，所以不会留空白 |
+
+两个模式共用同一条链路（同一个 `ValueNotifier` → 玻璃 / 让位 sliver / 排行榜左栏），
+所以两态动画期间顶栏与让位仍然严格对齐。要点：
+
+- `UserScrollNotification` 在滚动结束时还会再发一个 `idle` 方向，**不能**把它当成「出现」，
+  否则一上滑收起就立刻弹回来（只在 `forward` / `reverse` 上动作）。
+- 即时模式关闭收尾补间（`pinnedHeaderExtent` 返回 0）——动画自己会到端点，再去 `animateTo` 反而会打架。
+- 方向语义沿用旧的 instant 模式（`forward` = 出现、`reverse` = 收起）；真机上手感若相反，
+  把 `case .forward` / `case .reverse` 里那两行对调即可。
+- 即时模式下顶栏状态不跟着切 Tab 重置（与旧实现一致），切 Tab 也不会把已收起的顶栏弹回来。
+- **前提**：动态页 UP 栏要能「上滑收起」，需要把「UP 面板位置」设为**顶部**——
+  只有「顶部」位置的面板才会放进玻璃顶栏（默认是「左侧固定」，那种是独立侧栏，不参与顶栏收起）。
+
+### 8.4 二次复核：上一版「上滑收起」完全没反应的真 root cause
+
+- **`ScrollNotification.metrics` 不是 `ScrollPosition`，而是 `copyWith()` 出来的快照。**
+  `scroll_position.dart` 里所有派发都是 `dispatchScrollXxxNotification(copyWith(), ...)`，
+  所以 `identical(notification.metrics, position)` **永远为 false**。上一版拿它当白名单 →
+  每一条通知都被过滤掉 → 顶栏/面板对滚动毫无反应（同步、即时两个模式都不动）。
+  同一个错误还出现在 `CommonPageState.onPinnedHeaderNotification` 里，所以收尾补间也一直是死的。
+- **正确姿势**：`notification.context` 是派发者内部 GestureDetector 的 context
+  （SDK 注释里明确写了它在 `_ScrollableScope` 里面），所以
+  `Scrollable.maybeOf(notification.context)?.position` 能准确拿回派发它的那个 Scrollable 的 `position`，
+  再用它和当前 Tab 的 `ScrollController.position` 做 `identical` 才是对的。
+- 新增两条一次性探针（跑完已删）钉住这两个事实：
+  1. `identical(metrics, position) == false`，而 `identical(Scrollable.maybeOf(context)?.position, position) == true`；
+  2. 手指上滑 → `ScrollDirection.reverse`、下滑 → `forward`（即「上滑收起、下滑出现」的映射是对的）。
+
+### 8.5 本轮复核又修的两点
+
+1. **即时模式不再依赖白名单**：方向是全局 UI 状态，先按方向处理并直接返回；之前它排在
+   「认出是哪个列表」后面，一旦控制器解析失败（首帧/切 Tab 竞态）就会连方向通知一起丢掉。
+   同步模式才需要那个白名单 —— 收起进度必须取「拥有让位空间的那个列表」的滚动位置。
+2. **动画控制器改在 `initState` 里创建**：原来写成 `late final ... = AnimationController(...)`，
+   惰性初始化意味着「一直没触发过即时模式」的页面会在 `dispose()` 里才第一次创建它。
+
+### 已知取舍
+
+- 收尾补间两个方向都补（上滑补到收起端点、下滑补回展开）：仅在 `pixels < 量程` 时补，
+  也就是刚离开顶部那 50～80 px，观感是「松手后归位」；补回 0 会把列表带回顶部，
+  但幅度不超过量程，可以接受。
+- 动态页切到「本来就在顶部」的分类时，UP 面板会随 `animateToTop` 一起展开，而不是瞬跳。
+
+---
+
 ## 附录：改动文件清单（改造前 → 最终）
 
 | 文件 | 改造前 | 最终 | 关键变动 |
@@ -164,6 +302,12 @@ v1 把顶栏做成 pinned sliver 插进各 Tab 页的 `CustomScrollView`，实�
 | `lib/pages/video/view.dart` | `initState` 直接初始化播放器 | 转场结束后再初始化（600 ms 兜底） | 转场收尾不抢帧 |
 | `lib/utils/storage_pref.dart` | `videoOutputBackend` 默认 `''` | 默认 `vo=gpu-next,gpu-api=vulkan`（Android） | 开启 Vulkan 输出 |
 
-### 附：v1 的 sliver 方案已删除的文件
+### 附：v1 的 sliver 方案已删除、又在 v4 以解耦方式恢复
 
-`lib/common/widgets/top_bar_header.dart`（`TopBarHeaderDelegate`）、`TopBarInset.headerSliver` / `TopBarInsetSpacer` 返回 sliver 的写法、`CommonPageState` 的 `pinnedHeaderExtent` / `pinnedHeaderScrollController` / `onPinnedHeaderNotification`。相关实测数据（pinned+floating+snap 的几何与收尾行为）已记入工程笔记，供将来重新评估。
+- v1 删除的文件 `lib/common/widgets/top_bar_header.dart`（`TopBarHeaderDelegate`）没有恢复：
+  v4 不需要在 sliver 里画任何东西，只用一个不可见的 `SliverPersistentHeader` 占位。
+- v1 删除的 `CommonPageState.pinnedHeaderExtent` / `pinnedHeaderScrollController` /
+  `onPinnedHeaderNotification` 已在 v4 恢复（见第八节），但收尾补间从 `Timer.periodic`
+  换成了 `ScrollController.animateTo`。
+- 相关实测数据（pinned 头部的占位公式、`pinned + floating` 会覆盖内容、snap 只会补到展开态）
+  记入工程笔记。
