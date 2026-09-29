@@ -272,7 +272,11 @@ class TopBarInset extends InheritedWidget {
     this.collapse,
     this.followScroll = true,
     required super.child,
-  }) : minValue = minValue ?? value;
+  }) : assert(
+         minValue == null || minValue <= value,
+         'minValue 不能大于 value：收起量程 = value - minValue',
+       ),
+       minValue = minValue ?? value;
 
   /// 顶栏完全展开时的高度（收起量程就是 `value - minValue`）
   final double value;
@@ -287,6 +291,10 @@ class TopBarInset extends InheritedWidget {
   /// 顶栏当前高度 = `value - collapse`（超出量程的部分自动 clamp）。
   /// 玻璃、让位 sliver、以及固定不滚动又要与顶栏底部对齐的元素
   /// （如排行榜左侧竖排 Tab 栏）都用同一个值，天然不会对不上。
+  ///
+  /// 必须是**稳定的实例**（如页面 State 里的一个 `ValueNotifier`、一个
+  /// `AnimationController`）：它一变就会重建所有下层的让位/固定元素，
+  /// 每次 build 新建一个的话，切 Tab / 旋转屏幕时会整棵子树重建。
   final ValueListenable<double>? collapse;
 
   /// 让位（空间）是否由滚动本身完成。

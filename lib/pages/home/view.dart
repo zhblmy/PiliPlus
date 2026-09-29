@@ -29,28 +29,17 @@ class _HomePageState extends CommonPageState<HomePage>
   final _mainController = Get.find<MainController>();
 
   @override
-  bool get needsCorrection => _homeController.hideTopBar;
-
-  @override
   bool get wantKeepAlive => true;
 
   /// 顶栏收起由滚动通知驱动（见 _onScrollNotification），不再写全局 barOffset
   @override
   bool get useBarOffset => false;
 
-  /// 收起量程 = 搜索栏高度（玻璃顶栏可收起的部分）。
-  /// 生效条件跟上面玻璃顶栏一致（横屏/侧边栏模式顶栏是参与排版的，不需要补间）；
+  /// 收起量程 = 搜索栏高度（玻璃顶栏可收起的部分），生效条件同 [_barCollapsible]；
   /// 即时模式不需要补间（动画自己会到端点）。
   @override
-  double get pinnedHeaderExtent {
-    if (_instant ||
-        !_homeController.hideTopBar ||
-        _mainController.useSideBar ||
-        !MediaQuery.sizeOf(context).isPortrait) {
-      return 0.0;
-    }
-    return Style.topBarHeight;
-  }
+  double get pinnedHeaderExtent =>
+      !_instant && _barCollapsible ? _collapseExtent : 0.0;
 
   @override
   ScrollController? get pinnedHeaderScrollController => _safeScrollController();
@@ -90,7 +79,19 @@ class _HomePageState extends CommonPageState<HomePage>
   /// 收起量程
   double get _collapseExtent => Style.topBarHeight;
 
+  /// 是否竖屏。`_barCollapsible` 会在滚动回调里被读到，那里读 MediaQuery 会顺手
+  /// 注册依赖，所以统一在 didChangeDependencies 里缓存一次。
+  bool _isPortrait = true;
+
+  /// 顶栏是否真的可以收起 = 「会建玻璃顶栏」且「收开关打开」。
+  /// 横屏 / 侧栏模式下本页不建玻璃顶栏与让位 sliver，收起进度没人读，
+  /// 再去算它、动它都是白费；把条件收在这里也免得各处再写一遍。
+  bool get _barCollapsible =>
+      _homeController.hideTopBar && !_mainController.useSideBar && _isPortrait;
+
   void _onBarAnimTick() {
+    // 同步模式的收起进度 = 滚动位置，动画只属于即时模式
+    if (!_instant) return;
     _barCollapse.value = _collapseExtent * _barAnim.value;
   }
 
@@ -118,9 +119,22 @@ class _HomePageState extends CommonPageState<HomePage>
   /// 即时模式不看滚动位置，顶栏状态不跟着 Tab 重置。
   void _onTabChanged() {
     _activePosition = null;
-    if (_instant) return;
-    _barCollapse.value =
-        _currentScrollPosition()?.pixels.clamp(0.0, _collapseExtent) ?? 0.0;
+    if (_instant || !_barCollapsible) return;
+    if (_syncCollapseToCurrent()) return;
+    // TabBarView 的页面是懒建的（在 layout 阶段才建），刚切过去时可能还没有
+    // ScrollPosition。等这一帧布局结束再对齐一次，否则收起进度会留在 0
+    // （看起来就是“顶栏自己弹回展开”）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncCollapseToCurrent();
+    });
+  }
+
+  /// 把收起进度对齐到当前可见 Tab 的滚动位置；拿不到 position 返回 false
+  bool _syncCollapseToCurrent() {
+    final position = _currentScrollPosition();
+    if (position == null) return false;
+    _barCollapse.value = position.pixels.clamp(0.0, _collapseExtent);
+    return true;
   }
 
   @override
@@ -132,14 +146,14 @@ class _HomePageState extends CommonPageState<HomePage>
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
-    // 顶栏不参与收起时（开关关掉）不需要做任何事
-    if (!_homeController.hideTopBar) return false;
+    // 顶栏不参与收起时（开关关掉 / 横屏 / 侧栏模式）不需要做任何事
+    if (!_barCollapsible) return false;
     final metrics = notification.metrics;
     if (metrics.axis != .vertical) return false;
     final bool isUser = notification is UserScrollNotification;
-    if (!isUser &&
-        notification is! ScrollUpdateNotification &&
-        notification is! ScrollMetricsNotification) {
+    // `ScrollMetricsNotification` 不是 `ScrollNotification` 的子类（它单独在
+    // metrics 变化时发），在这里判断它永远是 false，白写一行还会误导。
+    if (!isUser && notification is! ScrollUpdateNotification) {
       return false;
     }
     if (_instant) {
@@ -180,6 +194,7 @@ class _HomePageState extends CommonPageState<HomePage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _colorScheme = ColorScheme.of(context);
+    _isPortrait = MediaQuery.sizeOf(context).isPortrait;
   }
 
   @override
@@ -275,6 +290,8 @@ class _HomePageState extends CommonPageState<HomePage>
           mainAxisSize: .min,
           children: [
             SizedBox(height: statusBarHeight),
+            // 0 尺寸的桥：接住 setSearchBar() 的「显示顶栏」请求
+            _showTopBarRequest(),
             // CustomHeightWidget 收起时只会把内容挪走、并不裁剪，
             // 超出搜索栏那块的会画到状态栏那片玻璃上，必须裁掉。
             ClipRect(
@@ -368,6 +385,30 @@ class _HomePageState extends CommonPageState<HomePage>
       height: Style.topBarHeight - collapse,
       child: Padding(padding: _searchRowPadding, child: content),
     );
+  }
+
+  /// 接住「把顶栏显示出来」这个请求。
+  ///
+  /// `MainController.setSearchBar()`（在别的 Tab 按返回键回到首页时会调用）
+  /// 会把 `homeController.showTopBar` 置 true；即时模式的旧实现就是靠它把搜索栏
+  /// 展开的。现在顶栏由本页的收起动画驱动，这里把它接回来：处于收起状态又收到
+  /// 「要求显示」就播一次展开动画。
+  /// 用 0 尺寸的 Obx 读这个 rx（而不是自己 subscribe）：交给 GetX 的响应式刷新，
+  /// 少一份要手动释放的订阅，也不影响布局。
+  Widget _showTopBarRequest() {
+    final showTopBar = _homeController.showTopBar;
+    if (showTopBar == null) return const SizedBox.shrink();
+    return Obx(() {
+      if (showTopBar.value &&
+          _barCollapse.value > 0.0 &&
+          !_barAnim.isAnimating) {
+        // Obx 的 builder 在 build 期间跑，动画要等这一帧结束再驱动
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _animateBar(false);
+        });
+      }
+      return const SizedBox.shrink();
+    });
   }
 
   Widget searchBar() {
@@ -498,31 +539,35 @@ Widget userAvatar({
 }
 
 Widget msgBadge(MainController mainController) {
+  // 外层只订阅登录态：未读数变化时不必连整个按钮一起重建
   return Obx(
-    () {
-      if (mainController.accountService.isLogin.value) {
-        final count = mainController.msgUnReadCount.value;
-        final isNumBadge = mainController.msgBadgeMode == .number;
-        return IconButton(
-          tooltip: '消息',
-          onPressed: () {
-            mainController
-              ..clearUnreadMsg()
-              ..lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
-            Get.toNamed('/whisper');
-          },
-          icon: Badge(
-            isLabelVisible:
-                mainController.msgBadgeMode != .hidden && count != null,
-            alignment: isNumBadge
-                ? const Alignment(0.0, -0.85)
-                : const Alignment(1.0, -0.85),
-            label: isNumBadge && count != null ? Text(count) : null,
-            child: const Icon(Icons.notifications_none),
-          ),
-        );
-      }
-      return const SizedBox.shrink();
-    },
+    () => mainController.accountService.isLogin.value
+        ? _msgBadgeIcon(mainController)
+        : const SizedBox.shrink(),
   );
+}
+
+Widget _msgBadgeIcon(MainController mainController) {
+  return Obx(() {
+    final count = mainController.msgUnReadCount.value;
+    final mode = mainController.msgBadgeMode;
+    final isNumBadge = mode == .number;
+    return IconButton(
+      tooltip: '消息',
+      onPressed: () {
+        mainController
+          ..clearUnreadMsg()
+          ..lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
+        Get.toNamed('/whisper');
+      },
+      icon: Badge(
+        isLabelVisible: mode != .hidden && count != null,
+        alignment: isNumBadge
+            ? const Alignment(0.0, -0.85)
+            : const Alignment(1.0, -0.85),
+        label: isNumBadge && count != null ? Text(count) : null,
+        child: const Icon(Icons.notifications_none),
+      ),
+    );
+  });
 }

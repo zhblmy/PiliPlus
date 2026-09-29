@@ -27,7 +27,10 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
   /// 上面那个顶栏对应的滚动控制器（当前可见 Tab 的那个）
   ScrollController? get pinnedHeaderScrollController => null;
 
-  bool _pinnedScrollUp = false;
+  /// 本次手势的累计方向：true = 内容上滑（收起栏）、false = 下滑（展开栏）、
+  /// null = 本次手势还没产生过位移（ScrollStartNotification 会清空）。
+  /// 三态而不是 bool：不能拿上一次手势的方向去给这一次补间。
+  bool? _pinnedScrollUp;
   bool _pinnedSettling = false;
 
   /// 这条滚动通知是哪个列表发出来的。
@@ -57,15 +60,23 @@ abstract class CommonPageState<T extends StatefulWidget> extends State<T> {
         !identical(dispatcher, positions.first)) {
       return false;
     }
+    if (notification is ScrollStartNotification) {
+      // 新手势：方向重新判定
+      _pinnedScrollUp = null;
+      return false;
+    }
     if (notification is ScrollUpdateNotification) {
       final delta = notification.scrollDelta;
       if (delta != null && delta != 0) _pinnedScrollUp = delta > 0;
       return false;
     }
     if (notification is! ScrollEndNotification || _pinnedSettling) return false;
+    final bool? up = _pinnedScrollUp;
+    // 这次手势没滚动过（点一下又抬手）：方向未知就不补，免得往反方向怼
+    if (up == null) return false;
     final double pixels = notification.metrics.pixels;
     final double target;
-    if (_pinnedScrollUp) {
+    if (up) {
       final double extent = pinnedHeaderExtent;
       if (pixels <= 0 || pixels >= extent) return false;
       // 已经滚到底、补也补不动了：否则「列表本身就短于量程」时会

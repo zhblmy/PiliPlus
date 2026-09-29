@@ -45,17 +45,21 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
   @override
   bool get useBarOffset => false;
 
-  /// 收起量程 = 「顶部」UP 面板高度。
+  /// 是否竖屏。
+  /// `pinnedHeaderExtent` / `_panelCollapsible` 会被滚动回调读到，那里读
+  /// MediaQuery 会顺手注册依赖，改成在 didChangeDependencies 里缓存一次。
+  bool _isPortrait = true;
+
+  /// 收起量程 = 「顶部」UP 面板高度，生效条件与 [_panelCollapsible] 一致；
   /// 即时模式不需要补间（动画自己会到端点）。
   @override
-  double get pinnedHeaderExtent {
-    if (_instant ||
-        !_mainController.useBottomNav ||
-        !MediaQuery.sizeOf(context).isPortrait ||
-        upPanelPosition != .top) {
-      return 0.0;
-    }
-    return Pref.hideTopBar ? _kUpPanelTopHeight : 0.0;
+  double get pinnedHeaderExtent =>
+      !_instant && _panelCollapsible ? _collapseExtent : 0.0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _isPortrait = MediaQuery.sizeOf(context).isPortrait;
   }
 
   @override
@@ -85,14 +89,22 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
   /// 「即时」模式：按滚动方向两态收起/出现
   bool get _instant => _mainController.barHideType == .instant;
 
-  /// 面板是否可收起（与 build 里的 `topPanelInGlass && Pref.hideTopBar` 同义）
+  /// 收起量程 = 「顶部」UP 面板高度（玻璃里可以被收起掉的那部分）
+  double get _collapseExtent => _kUpPanelTopHeight;
+
+  /// 面板是否可收起（与 build 里的 `collapsiblePanel` 同义：
+  /// 玻璃模式 + 竖屏 + 开关打开 + 面板在顶部。横屏/侧栏模式下面板参与排版，
+  /// 不能跟着收起，所以这里必须和 build 判得一样）
   bool get _panelCollapsible =>
       _mainController.useBottomNav &&
+      _isPortrait &&
       Pref.hideTopBar &&
       upPanelPosition == .top;
 
   void _onBarAnimTick() {
-    _barCollapse.value = _kUpPanelTopHeight * _barAnim.value;
+    // 同步模式的收起进度 = 滚动位置，动画只属于即时模式
+    if (!_instant) return;
+    _barCollapse.value = _collapseExtent * _barAnim.value;
   }
 
   /// 即时模式：上滑（内容上移 = [ScrollDirection.reverse]）收起、下滑出现
@@ -115,12 +127,25 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
   }
 
   /// 切分类：换列表了，先把收起进度对齐到新 Tab 的真实位置。
-  /// 即时模式不看滚动位置，顶栏状态不跟着 Tab 重置。
+  /// 即时模式不看滚动位置，顶栏状态不跟着 Tab 重置；
+  /// 面板不参与收起时（横屏/侧栏/面板不在顶部/开关关掉）没人读这个值，也不必算。
   void _onTabChanged() {
     _activePosition = null;
-    if (_instant) return;
-    _barCollapse.value =
-        _currentScrollPosition()?.pixels.clamp(0.0, _kUpPanelTopHeight) ?? 0.0;
+    if (_instant || !_panelCollapsible) return;
+    if (_syncCollapseToCurrent()) return;
+    // TabBarView 的页面是懒建的（在 layout 阶段才建），刚切过去时可能还没有
+    // ScrollPosition。等这一帧布局结束再对齐一次，否则收起进度会留在 0。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncCollapseToCurrent();
+    });
+  }
+
+  /// 把收起进度对齐到当前可见 Tab 的滚动位置；拿不到 position 返回 false
+  bool _syncCollapseToCurrent() {
+    final position = _currentScrollPosition();
+    if (position == null) return false;
+    _barCollapse.value = position.pixels.clamp(0.0, _collapseExtent);
+    return true;
   }
 
   @override
@@ -136,9 +161,9 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
     final metrics = notification.metrics;
     if (metrics.axis != .vertical) return false;
     final bool isUser = notification is UserScrollNotification;
-    if (!isUser &&
-        notification is! ScrollUpdateNotification &&
-        notification is! ScrollMetricsNotification) {
+    // `ScrollMetricsNotification` 不是 `ScrollNotification` 的子类（它单独在
+    // metrics 变化时发），在这里判断它永远是 false。
+    if (!isUser && notification is! ScrollUpdateNotification) {
       return false;
     }
     if (_instant) {
@@ -170,7 +195,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       _activePosition = position;
     }
     if (!isUser) {
-      _barCollapse.value = metrics.pixels.clamp(0.0, _kUpPanelTopHeight);
+      _barCollapse.value = metrics.pixels.clamp(0.0, _collapseExtent);
     }
     return false;
   }
@@ -250,14 +275,6 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       return false;
     }
     return super.onNotificationType1(notification);
-  }
-
-  @override
-  bool onNotificationType2(ScrollNotification notification) {
-    if (checkPage) {
-      return false;
-    }
-    return super.onNotificationType2(notification);
   }
 
   @override
@@ -435,7 +452,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
         // child 是那个静态面板实例：每帧只重建裁切那一层
         child: panel,
         builder: (context, collapse, child) => topPanelArea(
-          _kUpPanelTopHeight - collapse.clamp(0.0, _kUpPanelTopHeight),
+          _collapseExtent - collapse.clamp(0.0, _collapseExtent),
           child!,
         ),
       );
@@ -482,9 +499,8 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
           // 不收起时 minValue 必须等于 value，否则内容会缩到面板里去。
           child: TopBarInset(
             value: barInset,
-            minValue: collapsiblePanel
-                ? statusBarHeight + _kAppBarHeight
-                : barInset,
+            // 收起后仍要保留的：状态栏那片 + 分类 Tab 栏
+            minValue: barInset - (collapsiblePanel ? _collapseExtent : 0.0),
             collapse: _barCollapse,
             followScroll: !_instant,
             child: content,

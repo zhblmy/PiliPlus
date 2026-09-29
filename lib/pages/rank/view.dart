@@ -46,15 +46,17 @@ class _RankPageState extends State<RankPage>
     );
   }
 
+  /// 左侧竖排 Tab 的条目（不依赖 context/主题，建一次复用）
+  late final List<Widget> _tabs = RankType.values
+      .map((e) => VerticalTab(text: e.label))
+      .toList();
+
   Widget _buildTab(ThemeData theme) {
     final inset = TopBarInset.maybeOf(context);
     final double expanded = inset?.value ?? 0.0;
     // 收起量程（= 顶栏展开高度 - 收起后仍保留的高度）
     final double extent = expanded - (inset?.minValue ?? expanded);
     final ValueListenable<double>? collapse = inset?.collapse;
-    final List<Widget> tabs = RankType.values
-        .map((e) => VerticalTab(text: e.label))
-        .toList();
     final double bottom = MediaQuery.paddingOf(context).bottom + 105;
 
     /// 左侧这一栏是固定不滚动的：顶栏完全展开时它正好在顶栏下面，
@@ -68,8 +70,8 @@ class _RankPageState extends State<RankPage>
       indicatorSize: .tab,
       controller: _rankController.tabController,
       padding: .only(top: top, bottom: bottom),
-      // tabs 在上面建好一份复用：收起过程中每帧只重建这一层包装
-      tabs: tabs,
+      // tabs 是上面那个复用实例：收起过程中每帧只重建这一层包装
+      tabs: _tabs,
       onTap: (index) {
         if (!_rankController.tabController.indexIsChanging) {
           _rankController.animateToTop();
