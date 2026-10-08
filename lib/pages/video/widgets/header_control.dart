@@ -866,6 +866,33 @@ class HeaderControlState extends State<HeaderControl>
                         'estimated-vf-fps\n${player.getProperty('estimated-vf-fps')}',
                       ),
                     ),
+                    // PL-02：核实「视频输出后端」设置是否真的生效。
+                    // vo = 配置进去的值；current-vo = 实际在用的 vo（判据看这个）；
+                    // gpu-api = 实际用的图形 API（vulkan / opengl / opengles）。
+                    // 属性不存在时 getProperty 返回空串，不会抛异常
+                    ListTile(
+                      dense: true,
+                      title: const Text("VO"),
+                      subtitle: Text(player.getProperty('vo')),
+                      onTap: () =>
+                          Utils.copyText('vo\n${player.getProperty('vo')}'),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text("CurrentVO"),
+                      subtitle: Text(player.getProperty('current-vo')),
+                      onTap: () => Utils.copyText(
+                        'current-vo\n${player.getProperty('current-vo')}',
+                      ),
+                    ),
+                    ListTile(
+                      dense: true,
+                      title: const Text("GpuApi"),
+                      subtitle: Text(player.getProperty('gpu-api')),
+                      onTap: () => Utils.copyText(
+                        'gpu-api\n${player.getProperty('gpu-api')}',
+                      ),
+                    ),
                     ListTile(
                       dense: true,
                       title: const Text("AudioParams"),

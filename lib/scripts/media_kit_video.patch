@@ -1,0 +1,27 @@
+diff --git a/media_kit_video/lib/src/video_controller/android_video_controller/real.dart b/media_kit_video/lib/src/video_controller/android_video_controller/real.dart
+index 8bf2193..7a153df 100644
+--- a/media_kit_video/lib/src/video_controller/android_video_controller/real.dart
++++ b/media_kit_video/lib/src/video_controller/android_video_controller/real.dart
+@@ -154,8 +154,11 @@ class AndroidVideoController extends PlatformVideoController {
+ 
+         rect.value = Rect.zero;
+         try {
+-          if (vo == 'gpu') {
+-            // NOTE: Only required for --vo=gpu
++          // PiliPlus 补丁：上游只对 --vo=gpu 做尺寸同步，于是 vo=gpu-next 时
++          // SurfaceTexture 仍是 1x1、android-surface-size 也没设 → 画面糊成一块纯色。
++          // （补丁文件：lib/scripts/media_kit_video.patch，由 patch.ps1 应用）
++          if (vo == 'gpu' || vo == 'gpu-next') {
++            // NOTE: Originally only required for --vo=gpu; --vo=gpu-next needs it too (PiliPlus patch).
+             // With --vo=gpu, we need to update the android.graphics.SurfaceTexture size & notify libmpv to re-create vo.
+             // In native Android, this kind of rendering is done with android.view.SurfaceView + android.view.SurfaceHolder, which offers onSurfaceChanged to handle this.
+             await _channel
+@@ -168,7 +171,7 @@ class AndroidVideoController extends PlatformVideoController {
+             // ----------------------------------------------
+             player.setOption('android-surface-size', '${width}x$height');
+             player.setOption('wid', _wid.toString());
+-            player.setOption('vo', 'gpu');
++            player.setOption('vo', vo);
+           }
+           // ----------------------------------------------
+         } catch (exception, stacktrace) {

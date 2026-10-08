@@ -176,7 +176,7 @@ List<SettingsModel> get videoSettings => [
       title: '视频输出后端',
       leading: const Icon(Icons.videocam_outlined),
       getSubtitle: () =>
-          '当前：${Pref.videoOutputBackend.isEmpty ? '默认（不设置）' : Pref.videoOutputBackend}'
+          '当前：${Pref.videoOutputBackend.isEmpty ? '默认（等同 vo=gpu）' : Pref.videoOutputBackend}'
           '。即mpv的--vo / --gpu-api，需重新打开视频生效',
       onTap: _showVideoOutputBackendDialog,
     ),
@@ -196,7 +196,9 @@ List<SettingsModel> get videoSettings => [
     ),
 ];
 
-/// PL-02：Android 可选 mpv 视频输出后端。默认「不设置」= 完全用 mpv 默认值。
+/// PL-02：Android 可选 mpv 视频输出后端（vo / gpu-api）。
+/// 注意「不设置」并不是跟随 mpv 自己的默认值：media_kit 会在初始化时把 vo 改写成 gpu，
+/// 所以空字符串等价于 vo=gpu（见 pl_player/controller.dart 的 _initPlayer）。
 Future<void> _showVideoOutputBackendDialog(
   BuildContext context,
   VoidCallback setState,
@@ -207,10 +209,11 @@ Future<void> _showVideoOutputBackendDialog(
       title: '视频输出后端',
       value: Pref.videoOutputBackend,
       values: const [
-        ('', '默认（不设置，跟随 mpv）'),
+        ('', '默认（不设置）＝ vo=gpu'),
+        ('vo=gpu', 'vo=gpu（旧版渲染器，最稳）'),
+        ('vo=gpu,gpu-api=vulkan', 'vo=gpu + Vulkan（最稳的 Vulkan 组合）'),
         ('vo=gpu-next', 'vo=gpu-next（新版渲染器）'),
         ('vo=gpu-next,gpu-api=vulkan', 'vo=gpu-next + Vulkan'),
-        ('vo=gpu', 'vo=gpu（旧版渲染器）'),
         ('gpu-api=opengles', 'gpu-api=opengles'),
       ],
     ),

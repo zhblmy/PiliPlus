@@ -272,14 +272,21 @@ abstract final class Pref {
   static bool get hwdecFallback =>
       _setting.get(SettingBoxKey.hwdecFallback, defaultValue: true);
 
-  /// Android 专属：mpv 视频输出后端，形如 `vo=gpu-next,gpu-api=vulkan`。
-  /// 空字符串 = 不设置（完全用 mpv 默认值）—— 性能报告 PL-02
+  /// Android 专属：mpv 视频输出后端，形如 `vo=gpu,gpu-api=vulkan`。
+  /// 空字符串 = 不设置，此时 media_kit 按其默认值用 `vo=gpu`（并非 mpv 自己的默认）
+  /// —— 性能报告 PL-02
   ///
-  /// 默认已改为 `vo=gpu-next,gpu-api=vulkan`（开启 Vulkan 输出）。
-  /// 想回退成完全跟随 mpv 默认值：设置 → 播放设置 → 视频输出后端 → 选「默认」。
+  /// `vo=` 必须由播放器层单独传给 media_kit 的 VideoControllerConfiguration 才生效
+  /// （media_kit 初始化时会把 vo 改写成自己的值，见 pl_player/controller.dart 的 _initPlayer）；
+  /// `gpu-api=` 等其余项仍走 Player options。
+  ///
+  /// 默认 `vo=gpu,gpu-api=vulkan`：开启 Vulkan 输出，但渲染器维持 `gpu`——
+  /// media_kit 只为 `vo=gpu` 适配了 Android surface 尺寸（非 gpu 会跳过
+  /// SetSurfaceTextureSize / android-surface-size），且 gpu 是本项目一直在跑的路径。
+  /// 想试新渲染器：设置 → 播放设置 → 视频输出后端 → 选「vo=gpu-next」。
   static String get videoOutputBackend => _setting.get(
     SettingBoxKey.videoOutputBackend,
-    defaultValue: Platform.isAndroid ? 'vo=gpu-next,gpu-api=vulkan' : '',
+    defaultValue: Platform.isAndroid ? 'vo=gpu,gpu-api=vulkan' : '',
   );
 
   /// 场景化刷新率（性能报告 MI-02）：

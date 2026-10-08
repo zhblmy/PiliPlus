@@ -783,17 +783,29 @@ class PlPlayerController
     if (autosync != '0') {
       opt['autosync'] = autosync;
     }
-    // PL-02：Android 可选 mpv 视频输出后端（形如 vo=gpu-next,gpu-api=vulkan）。
-    // 默认空字符串 = 不设置，完全沿用 mpv 默认值，行为与改动前一致。
+    // PL-02：Android 可选 mpv 视频输出后端（vo / gpu-api，逗号分隔，
+    // 默认 vo=gpu,gpu-api=vulkan）。空字符串 = 不设置，此时 media_kit 会用 vo=gpu
+    //（并不是 mpv 自己的默认值，原因见下）。
+    //
+    // 注意 vo 必须单独交给 VideoControllerConfiguration，不能只塞进 Player options：
+    // media_kit 的 AndroidVideoController 创建后会把 vo 置成 'null'，随后 onLoadHooks /
+    // videoParams 又按 configuration.vo ?? 'gpu' 覆盖回去（见 media_kit_video 的
+    // android_video_controller/real.dart），从 Player options 传的 vo 一定会被吃掉。
+    // 其余项（gpu-api 等）不是 media_kit 管的属性，照旧走 Player options。
+    String? vo;
     if (Platform.isAndroid) {
       final backend = Pref.videoOutputBackend;
       if (backend.isNotEmpty) {
         for (final item in backend.split(',')) {
           final index = item.indexOf('=');
           if (index > 0) {
-            opt[item.substring(0, index).trim()] = item
-                .substring(index + 1)
-                .trim();
+            final key = item.substring(0, index).trim();
+            final value = item.substring(index + 1).trim();
+            if (key == 'vo') {
+              vo = value;
+            } else {
+              opt[key] = value;
+            }
           }
         }
       }
@@ -814,6 +826,7 @@ class PlPlayerController
         enableHardwareAcceleration: hwdec != null,
         androidAttachSurfaceAfterVideoParameters: false,
         hwdec: hwdec,
+        vo: vo,
       ),
     );
 

@@ -312,3 +312,34 @@ foreach ($patch in $patches_cupertino) {
         throw "$LASTEXITCODE"
     }
 }
+
+# media_kit_video is a sub-package of the `media-kit` git dependency.
+# Upstream only syncs the Android surface size when vo == 'gpu', so with
+# vo=gpu-next the SurfaceTexture stays 1x1 (and android-surface-size is never
+# set) and the picture collapses into a blurry solid color.
+$MediaKitVideoPatch = "lib/scripts/media_kit_video.patch"
+
+$MediaKitDir = Get-ChildItem "$PubCacheDir/git" -Directory |
+    Where-Object { $_.Name -like "media-kit-*" } |
+    Select-Object -Last 1
+
+if (-not $MediaKitDir) {
+    throw "media-kit package not found in pub cache"
+}
+
+Write-Host "media-kit dir: $($MediaKitDir.FullName)"
+
+$MediaKitVideoPatchPath = "$env:GITHUB_WORKSPACE/$MediaKitVideoPatch"
+
+# normalize CRLF -> LF, keep UTF-8 without BOM (the patch contains non-ASCII comments)
+[System.IO.File]::WriteAllText($MediaKitVideoPatchPath,
+    ([System.IO.File]::ReadAllText($MediaKitVideoPatchPath) -replace "`r`n", "`n"))
+
+cd $MediaKitDir.FullName
+
+git apply $MediaKitVideoPatchPath
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "$MediaKitVideoPatch applied"
+} else {
+    throw "$LASTEXITCODE"
+}
