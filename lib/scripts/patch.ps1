@@ -232,6 +232,16 @@ switch ($platform.ToLower()) {
     default {}
 }
 
+# `~/.pub-cache` is the layout of the Unix CI runners (android/ios/macos/linux
+# jobs); when running the script on Windows locally that path does not exist, so
+# fall back to the Windows pub cache instead of failing to find the packages.
+if (-not (Test-Path $PubCacheDir)) {
+    $WindowsPubCacheDir = "$env:LOCALAPPDATA/Pub/Cache"
+    if (Test-Path $WindowsPubCacheDir) {
+        $PubCacheDir = $WindowsPubCacheDir
+    }
+}
+
 try {
     $MaterialUiDir = Get-ChildItem "$PubCacheDir/hosted/pub.dev" -Directory |
         Where-Object { $_.Name -like "material_ui-*" } |
