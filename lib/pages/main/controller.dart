@@ -291,8 +291,10 @@ class MainController extends GetxController
     }
   }
 
-  void setIndex(int value) {
-    feedBack();
+  void setIndex(int value, {bool feedback = true}) {
+    // 底栏自己已经在「手指按下」时震过了（见 FloatingNavigationBar / main/view.dart
+    // 的 Listener），从这里传 feedback: false 进来，避免按一下震两次。
+    if (feedback) feedBack();
 
     final currentNav = navigationBars[value];
     if (value != selectedIndex.value) {

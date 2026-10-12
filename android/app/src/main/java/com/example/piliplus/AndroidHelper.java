@@ -25,6 +25,9 @@ import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Rational;
@@ -139,6 +142,53 @@ public final class AndroidHelper {
             context.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkgUri)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 触发一次“按压”触感。
+     *
+     * <p>不用 {@code View.performHapticFeedback}：它只能选系统预设档位（Flutter 的
+     * lightImpact 对应 CLOCK_TICK），在澎湃 OS 等设备上非常轻、几乎感觉不到，
+     * 而且强度不可调。这里直接驱动振动器，时长/振幅可控。
+     *
+     * <p>需要 {@code android.permission.VIBRATE}（普通权限，安装即授予）。
+     *
+     * @param durationMs 振动时长（毫秒，建议 10~40）
+     * @param amplitude  振幅 0~255；小于等于 0 或设备不支持振幅控制时用系统默认振幅
+     */
+    public static void vibrate(int durationMs, int amplitude) {
+        if (durationMs <= 0) {
+            return;
+        }
+        try {
+            Context context = getContext();
+            Vibrator vibrator = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                Object manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+                if (manager instanceof VibratorManager) {
+                    vibrator = ((VibratorManager) manager).getDefaultVibrator();
+                }
+            } else {
+                Object service = context.getSystemService(Context.VIBRATOR_SERVICE);
+                if (service instanceof Vibrator) {
+                    vibrator = (Vibrator) service;
+                }
+            }
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // 注：VibrationEffect.MAX_AMPLITUDE 是 @hide 常量（编译不过），这里直接用 255
+                int amp = amplitude > 0 && vibrator.hasAmplitudeControl()
+                        ? Math.min(amplitude, 255)
+                        : VibrationEffect.DEFAULT_AMPLITUDE;
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amp));
+            } else {
+                vibrator.vibrate(durationMs);
+            }
+        } catch (Exception ignored) {
+            // 无振动器 / 缺 VIBRATE 权限 / ROM 限制：静默失败，不影响主流程
         }
     }
 

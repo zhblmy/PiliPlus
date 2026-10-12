@@ -105,6 +105,13 @@ abstract final class PiliAndroidHelper {
   @pragma('vm:prefer-inline')
   static int thermalStatus() => AndroidHelper.thermalStatus();
 
+  /// 触发一次“按压”触感（Android 原生振动器，时长/振幅可控）。
+  ///
+  /// [durationMs] 振动时长（毫秒）；[amplitude] 振幅 0~255，
+  /// 小于等于 0 或设备不支持振幅控制时用系统默认振幅。
+  static void vibrate(int durationMs, int amplitude) =>
+      AndroidHelper.vibrate(durationMs, amplitude);
+
   /// 是否已加入电池优化白名单（“省电策略 = 无限制”的前置条件）
   @pragma('vm:prefer-inline')
   static bool isIgnoringBatteryOptimizations() =>

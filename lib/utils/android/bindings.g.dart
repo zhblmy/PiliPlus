@@ -348,6 +348,41 @@ extension type AndroidHelper._(jni$_.JObject _$this) implements jni$_.JObject {
     ).integer;
   }
 
+  static final _id_vibrate = _class.staticMethodId(
+    r'vibrate',
+    r'(II)V',
+  );
+
+  static final _vibrate =
+      jni$_.ProtectedJniExtensions.lookup<
+            jni$_.NativeFunction<
+              jni$_.JThrowablePtr Function(
+                jni$_.Pointer<jni$_.Void>,
+                jni$_.JMethodIDPtr,
+                jni$_.VarArgs<(jni$_.Int32, jni$_.Int32)>,
+              )
+            >
+          >('globalEnv_CallStaticVoidMethod')
+          .asFunction<
+            jni$_.JThrowablePtr Function(
+              jni$_.Pointer<jni$_.Void>,
+              jni$_.JMethodIDPtr,
+              core$_.int,
+              core$_.int,
+            )
+          >();
+
+  /// from: `static public void vibrate(int durationMs, int amplitude)`
+  static void vibrate(core$_.int durationMs, core$_.int amplitude) {
+    final _$$classRef = _class.reference;
+    _vibrate(
+      _$$classRef.pointer,
+      _id_vibrate.pointer,
+      durationMs,
+      amplitude,
+    ).check();
+  }
+
   static final _id_setSustainedPerformanceMode = _class.staticMethodId(
     r'setSustainedPerformanceMode',
     r'(JZ)V',

@@ -183,7 +183,9 @@ List<SettingsModel> get videoSettings => [
   NormalModel(
     title: '硬解模式',
     leading: const Icon(Icons.memory_outlined),
-    getSubtitle: () => '当前：${Pref.hardwareDecoding}（此项即mpv的--hwdec）',
+    getSubtitle: () =>
+        '当前：${Pref.hardwareDecoding}（此项即mpv的--hwdec）'
+        '${Platform.isAndroid && Pref.videoOutputBackend.contains('mediacodec_embed') ? '；已选 vo=mediacodec_embed，实际固定用 mediacodec' : ''}',
     onTap: _showHwDecDialog,
   ),
   if (Platform.isAndroid)
@@ -214,6 +216,11 @@ Future<void> _showVideoOutputBackendDialog(
         ('vo=gpu,gpu-api=vulkan', 'vo=gpu + Vulkan（最稳的 Vulkan 组合）'),
         ('vo=gpu-next', 'vo=gpu-next（新版渲染器）'),
         ('vo=gpu-next,gpu-api=vulkan', 'vo=gpu-next + Vulkan'),
+        (
+          'vo=mediacodec_embed',
+          'vo=mediacodec_embed（MediaCodec 直出 Surface，最省电，'
+              '硬解固定 mediacodec；不支持画面滤镜/截图）',
+        ),
         ('gpu-api=opengles', 'gpu-api=opengles'),
       ],
     ),

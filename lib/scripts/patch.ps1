@@ -329,7 +329,8 @@ foreach ($patch in $patches_cupertino) {
 # media_kit_video is a sub-package of the `media-kit` git dependency.
 # Upstream only syncs the Android surface size when vo == 'gpu', so with
 # vo=gpu-next the SurfaceTexture stays 1x1 (and android-surface-size is never
-# set) and the picture collapses into a blurry solid color.
+# set) and the picture collapses into a blurry solid color. vo=mediacodec_embed
+# (MediaCodec output rendered straight into the Surface) needs the same sync.
 $MediaKitVideoPatch = "lib/scripts/media_kit_video.patch"
 
 $PackageConfigPath = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"

@@ -469,6 +469,14 @@ class PlPlayerController
   bool enableHeart = true;
   late String? hwdec = Pref.enableHA ? Pref.hardwareDecoding : null;
 
+  /// 视频输出后端里解析出来的 `vo`（仅 Android，见 [_initPlayer]）；
+  /// 空/null 表示没设置，media_kit 会用 `vo=gpu`。
+  String? _videoOutputVo;
+
+  /// 是否在用 `vo=mediacodec_embed`（MediaCodec 直接输出到 Surface）。
+  /// 该后端对 mpv 侧的硬解档位/滤镜都有硬性要求，见各处判断。
+  bool get isMediacodecEmbed => _videoOutputVo == 'mediacodec_embed';
+
   late final progressType = Pref.btmProgressBehavior;
   late final enableQuickDouble = Pref.enableQuickDouble;
   late final fullScreenGestureReverse = Pref.fullScreenGestureReverse;
@@ -820,6 +828,8 @@ class PlPlayerController
   /// 低功耗 / 画中画降载：临时清空 glsl-shaders（Anime4K 超分是移动 GPU 上最重的
   /// 一项），**不落盘**、也不改用户的超分设置，退出场景后再 [restoreSuperResolution]。
   Future<void> trimShadersForLowPower() async {
+    // vo=mediacodec_embed 直出 Surface，mpv 侧不存在画面滤镜/着色器链
+    if (isMediacodecEmbed) return;
     await _videoPlayerController?.command(
       const ['change-list', 'glsl-shaders', 'clr', ''],
     );
@@ -843,6 +853,9 @@ class PlPlayerController
         setting.put(SettingBoxKey.superResolutionType, type.index);
       }
     }
+    // vo=mediacodec_embed 直出 Surface，mpv 侧没有任何画面滤镜/着色器链，
+    // 下发 glsl-shaders 只会报错；档位照旧记录，但不设着色器。
+    if (isMediacodecEmbed) return;
     pp ??= _videoPlayerController!;
     switch (type) {
       case SuperResolutionType.disable:
@@ -912,6 +925,13 @@ class PlPlayerController
         }
       }
     }
+    _videoOutputVo = vo;
+
+    // vo=mediacodec_embed 是「MediaCodec 直接输出到 Surface」的后端（mpv 文档：
+    // Requires --hwdec=mediacodec），只有 mediacodec 这一档硬解能给它供帧，
+    // 否则 vo 拿不到解码器的 Surface、画面会全黑。所以这里覆盖用户设置里的硬解档位
+    // （VideoControllerConfiguration.hwdec 会在 Player 创建之后写入 mpv，优先级更高）。
+    final String? videoHwdec = isMediacodecEmbed ? 'mediacodec' : hwdec;
 
     final player = await Player.create(
       configuration: PlayerConfiguration(
@@ -925,9 +945,9 @@ class PlPlayerController
     _videoController = await VideoController.create(
       player,
       configuration: VideoControllerConfiguration(
-        enableHardwareAcceleration: hwdec != null,
+        enableHardwareAcceleration: videoHwdec != null,
         androidAttachSurfaceAfterVideoParameters: false,
-        hwdec: hwdec,
+        hwdec: videoHwdec,
         vo: vo,
       ),
     );
@@ -1037,6 +1057,9 @@ class PlPlayerController
 
   Future<void> _tryHwdecFallback() async {
     if (!Platform.isAndroid || !Pref.hwdecFallback) return;
+    // vo=mediacodec_embed 只吃 mediacodec，降级链里的 mediacodec-copy/auto-copy/软解
+    // 都会让画面直接变黑，所以这个后端下不降级。
+    if (isMediacodecEmbed) return;
     if (_hwdecFallbackRunning || isLive) return;
     if (_hwdecFallbackCount >= _hwdecFallbackChain.length) return;
     final player = _videoPlayerController;
@@ -1319,9 +1342,15 @@ class PlPlayerController
           );
         } else if (event.startsWith('Could not open codec') ||
             event.startsWith('Failed to initialize a decoder')) {
-          SmartDialog.showToast('无法加载解码器, $event，可能会切换至软解');
-          // PL-05：自动逐级降级（mediacodec-copy → auto-copy → 软解）
-          unawaited(_tryHwdecFallback());
+          if (isMediacodecEmbed) {
+            // 该模式只接受 mediacodec 硬解（见 _initPlayer），降级链在这里没有意义，
+            // 提示要说清楚怎么办，而不是给它一个「可能会切软解」的假希望。
+            SmartDialog.showToast('此视频无法用 mediacodec 硬解，请把视频输出后端改回默认');
+          } else {
+            SmartDialog.showToast('无法加载解码器, $event，可能会切换至软解');
+            // PL-05：自动逐级降级（mediacodec-copy → auto-copy → 软解）
+            unawaited(_tryHwdecFallback());
+          }
         } else if (!onlyPlayAudio.value) {
           if (event.startsWith("error running") ||
               event.startsWith("Failed to open .") ||

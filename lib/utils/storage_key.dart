@@ -38,6 +38,7 @@ abstract final class SettingBoxKey {
 
   static const String enableVerticalExpand = 'enableVerticalExpand',
       feedBackEnable = 'feedBackEnable',
+      vibrateStrength = 'vibrateStrength',
       enableLongShowControl = 'enableLongShowControl',
       horizontalScreen = 'horizontalScreen',
       CDNService = 'CDNService',

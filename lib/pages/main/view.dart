@@ -18,6 +18,7 @@ import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:PiliPlus/utils/extension/context_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
+import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
@@ -367,7 +368,8 @@ class _MainAppState extends PopScopeState<MainApp>
       if (_mainController.floatingNavBar) {
         bottomNav = Obx(
           () => FloatingNavigationBar(
-            onDestinationSelected: _mainController.setIndex,
+            onDestinationSelected: (index) =>
+                _mainController.setIndex(index, feedback: false),
             selectedIndex: _mainController.selectedIndex.value,
             destinations: _mainController.navigationBars
                 .map(
@@ -397,25 +399,31 @@ class _MainAppState extends PopScopeState<MainApp>
           shadowColor: Colors.black.withValues(
             alpha: _colorScheme.isDark ? 0.35 : 0.12,
           ),
-          child: Obx(
-            () => NavigationBar(
-              maintainBottomViewPadding: true,
-              backgroundColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              // 约 80 的 7/10
-              height: 56,
-              onDestinationSelected: _mainController.setIndex,
-              selectedIndex: _mainController.selectedIndex.value,
-              destinations: _mainController.navigationBars
-                  .map(
-                    (e) => NavigationDestination(
-                      label: e.label,
-                      icon: _buildIcon(type: e),
-                      selectedIcon: _buildIcon(type: e, selected: true),
-                    ),
-                  )
-                  .toList(),
+          // 按压缩动反馈（跟随设置 → 其它设置 → 震动反馈）。
+          // 用 Listener（原始指针事件），不参与手势竞技场，不影响点击。
+          child: Listener(
+            onPointerDown: (_) => feedBack(),
+            child: Obx(
+              () => NavigationBar(
+                maintainBottomViewPadding: true,
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                // 约 80 的 7/10
+                height: 56,
+                onDestinationSelected: (index) =>
+                    _mainController.setIndex(index, feedback: false),
+                selectedIndex: _mainController.selectedIndex.value,
+                destinations: _mainController.navigationBars
+                    .map(
+                      (e) => NavigationDestination(
+                        label: e.label,
+                        icon: _buildIcon(type: e),
+                        selectedIcon: _buildIcon(type: e, selected: true),
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
           ),
         );
@@ -436,25 +444,30 @@ class _MainAppState extends PopScopeState<MainApp>
           shadowColor: Colors.black.withValues(
             alpha: _colorScheme.isDark ? 0.35 : 0.12,
           ),
-          child: Obx(
-            () => BottomNavigationBar(
-              currentIndex: _mainController.selectedIndex.value,
-              onTap: _mainController.setIndex,
-              iconSize: 16,
-              selectedFontSize: 12,
-              unselectedFontSize: 12,
-              type: .fixed,
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              items: _mainController.navigationBars
-                  .map(
-                    (e) => BottomNavigationBarItem(
-                      label: e.label,
-                      icon: _buildIcon(type: e),
-                      activeIcon: _buildIcon(type: e, selected: true),
-                    ),
-                  )
-                  .toList(),
+          // 按压缩动反馈（跟随设置 → 其它设置 → 震动反馈）
+          child: Listener(
+            onPointerDown: (_) => feedBack(),
+            child: Obx(
+              () => BottomNavigationBar(
+                currentIndex: _mainController.selectedIndex.value,
+                onTap: (index) =>
+                    _mainController.setIndex(index, feedback: false),
+                iconSize: 16,
+                selectedFontSize: 12,
+                unselectedFontSize: 12,
+                type: .fixed,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                items: _mainController.navigationBars
+                    .map(
+                      (e) => BottomNavigationBarItem(
+                        label: e.label,
+                        icon: _buildIcon(type: e),
+                        activeIcon: _buildIcon(type: e, selected: true),
+                      ),
+                    )
+                    .toList(),
+              ),
             ),
           ),
         );

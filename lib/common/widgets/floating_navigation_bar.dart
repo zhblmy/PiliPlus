@@ -4,6 +4,7 @@
 
 import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
+import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:material_ui/material_ui.dart';
 
 const double _kMaxLabelTextScaleFactor = 1.3;
@@ -134,6 +135,8 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     _dragStartDx = event.position.dx;
     _dragStartPosition = _position;
     _pressController.forward();
+    // 按压震动反馈（跟随设置 → 其它设置 → 震动反馈）
+    feedBack();
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -225,75 +228,82 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
       child: SizedBox(
         height: _kNavigationHeight,
         width: count * _kIndicatorWidth,
-        child: LiquidGlass(
-          shape: _kNavigationShape,
-          blur: _kBlurSigma,
-          // 半透明着色：下面的内容会被高斯模糊后透出来。
-          // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
-          color:
-              (widget.backgroundColor ??
-                      navigationBarTheme.backgroundColor ??
-                      defaults.backgroundColor!)
-                  .withValues(alpha: defaults.isDark ? 0.32 : 0.22),
-          highlightColor: Colors.white,
-          // 左上亮、右下渐隐的高光边
-          highlightGradient: defaults.isDark
-              ? kGlassRimGradientDark
-              : kGlassRimGradient,
-          borderWidth: 1.2,
-          shadowColor: Colors.black.withValues(
-            alpha: defaults.isDark ? 0.35 : 0.12,
-          ),
-          // 用 Listener（原始指针事件）而不是 GestureDetector：
-          // 它不会和下面每个 destination 的点击识别器抢手势，
-          // 点按依旧由各自的 GestureDetector 处理。
-          child: Listener(
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            onPointerUp: (_) => _endDrag(),
-            onPointerCancel: (_) => _endDrag(cancel: true),
-            child: Padding(
-              padding: _kIndicatorPadding,
-              child: Stack(
-                // 气泡宽度 == 格子宽度时会比格子略宽一点点（沿用原实现的取值），
-                // 不裁剪才不会在第一/最后一格边缘切出一小块平面
-                clipBehavior: Clip.none,
-                children: [
-                  // 选中气泡只画一个，跟着选中项横向滑动
-                  // （用 Transform 平移，不会触发重新布局；放在格子下面）。
-                  // 手指按住时放大、拖动时跟手、抬手后缩回并吸附到最近一格。
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: _kIndicatorWidth,
-                    child: ValueListenableBuilder<double?>(
-                      valueListenable: _dragPosition,
-                      builder: (context, _, child) => AnimatedBuilder(
-                        animation: _controller,
-                        builder: (context, _) => Transform.translate(
-                          offset: Offset(
-                            cellWidth * _position +
-                                (cellWidth - _kIndicatorWidth) / 2,
-                            0,
-                          ),
-                          child: child,
-                        ),
-                        child: child,
+        // Listener 放在最外层（所有子节点的祖先）：它用原始指针事件，
+        // 不会和下面每个 destination 的点击识别器抢手势（点按依旧由各自的
+        // GestureDetector 处理），同时无论命中玻璃、气泡还是图标都能收到按下事件。
+        child: Listener(
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: (_) => _endDrag(),
+          onPointerCancel: (_) => _endDrag(cancel: true),
+          child: Stack(
+            // 气泡按压缩放后会超出 55 高的胶囊，这一层不能裁剪
+            clipBehavior: Clip.none,
+            children: [
+              // 玻璃本体只包一层不可见占位：内容单独画在外层，
+              // 这样玻璃自己的 ClipPath（外形裁剪）不会把放大后的气泡切掉。
+              Positioned.fill(
+                child: LiquidGlass(
+                  shape: _kNavigationShape,
+                  blur: _kBlurSigma,
+                  // 半透明着色：下面的内容会被高斯模糊后透出来。
+                  // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
+                  color:
+                      (widget.backgroundColor ??
+                              navigationBarTheme.backgroundColor ??
+                              defaults.backgroundColor!)
+                          .withValues(alpha: defaults.isDark ? 0.32 : 0.22),
+                  highlightColor: Colors.white,
+                  // 左上亮、右下渐隐的高光边
+                  highlightGradient: defaults.isDark
+                      ? kGlassRimGradientDark
+                      : kGlassRimGradient,
+                  borderWidth: 1.2,
+                  shadowColor: Colors.black.withValues(
+                    alpha: defaults.isDark ? 0.35 : 0.12,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              // 选中气泡只画一个，跟着选中项横向滑动
+              // （用 Transform 平移，不会触发重新布局；放在图标/文字下面）。
+              // 手指按住时放大、拖动时跟手、抬手后缩回并吸附到最近一格。
+              // 它在玻璃的裁剪之外，所以放大后可以连边框一起超出悬浮底栏。
+              Positioned(
+                left: _kIndicatorPaddingInt,
+                top: _kIndicatorPaddingInt,
+                bottom: _kIndicatorPaddingInt,
+                width: _kIndicatorWidth,
+                child: ValueListenableBuilder<double?>(
+                  valueListenable: _dragPosition,
+                  builder: (context, _, child) => AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => Transform.translate(
+                      offset: Offset(
+                        cellWidth * _position +
+                            (cellWidth - _kIndicatorWidth) / 2,
+                        0,
                       ),
-                      child: ScaleTransition(
-                        scale: _pressScale,
-                        child: DecoratedBox(
-                          decoration: ShapeDecoration(
-                            shape: _kNavigationShape,
-                            color: bubbleColor,
-                          ),
-                          child: const SizedBox.expand(),
-                        ),
+                      child: child,
+                    ),
+                    child: child,
+                  ),
+                  child: ScaleTransition(
+                    scale: _pressScale,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: _kNavigationShape,
+                        color: bubbleColor,
                       ),
+                      child: const SizedBox.expand(),
                     ),
                   ),
-                  Row(
+                ),
+              ),
+              Positioned.fill(
+                child: Padding(
+                  padding: _kIndicatorPadding,
+                  child: Row(
                     crossAxisAlignment: .stretch,
                     children: <Widget>[
                       for (int i = 0; i < count; i++)
@@ -321,9 +331,9 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
                         ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),

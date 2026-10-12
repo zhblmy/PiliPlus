@@ -154,6 +154,11 @@ abstract final class Pref {
   static bool get feedBackEnable =>
       _setting.get(SettingBoxKey.feedBackEnable, defaultValue: false);
 
+  /// 触感强度档位下标（见 lib/utils/feed_back.dart 的 kVibrateLevels）。
+  /// 默认「强」（2）：系统预设触感（HapticFeedback）在这些设备上普遍偏弱。
+  static int get vibrateStrength =>
+      _setting.get(SettingBoxKey.vibrateStrength, defaultValue: 2);
+
   static int get picQuality =>
       _setting.get(SettingBoxKey.defaultPicQa, defaultValue: 10);
 
