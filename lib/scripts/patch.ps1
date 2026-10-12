@@ -101,6 +101,8 @@ $MouseCursorPatch = "lib/scripts/mouse_cursor.patch"
 
 $GeetestIOSPatch = "lib/scripts/geetest_ios.patch"
 
+$DoubleTapGesturePatch = "lib/scripts/double_tap_gesture.patch"
+
 if ($platform.ToLower() -eq "ios") {
     git apply $BottomSheetIOSPiliPlusPatch
     if ($LASTEXITCODE -eq 0) {
@@ -126,7 +128,8 @@ $patches = @($ModalBarrierPatch, $TextSelectionPatch, $MouseCursorPatch,
             $SelectableRegionPatch, $EditableTextPatch, $TextFieldPatch,
             $ScrollPositionPatch, $ScrollablePatch, $ScrollableGesturePatch,
             $DraggableScrollableSheetPatch, $ScaffoldPatch, $TextPatch,
-            $TextPainterPatch, $SliverPatch, $RefreshIndicatorPatch)
+            $TextPainterPatch, $SliverPatch, $RefreshIndicatorPatch,
+            $DoubleTapGesturePatch)
 
 switch ($platform.ToLower()) {
     "android" {
@@ -319,15 +322,27 @@ foreach ($patch in $patches_cupertino) {
 # set) and the picture collapses into a blurry solid color.
 $MediaKitVideoPatch = "lib/scripts/media_kit_video.patch"
 
-$MediaKitDir = Get-ChildItem "$PubCacheDir/git" -Directory |
-    Where-Object { $_.Name -like "media-kit-*" } |
-    Select-Object -Last 1
-
-if (-not $MediaKitDir) {
-    throw "media-kit package not found in pub cache"
+$PackageConfigPath = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"
+if (-not (Test-Path $PackageConfigPath)) {
+    throw "Dart package config not found: $PackageConfigPath"
 }
 
-Write-Host "media-kit dir: $($MediaKitDir.FullName)"
+$PackageConfig = Get-Content $PackageConfigPath -Raw | ConvertFrom-Json
+$MediaKitVideoPackage = $PackageConfig.packages |
+    Where-Object { $_.name -eq "media_kit_video" } |
+    Select-Object -First 1
+
+if (-not $MediaKitVideoPackage) {
+    throw "media_kit_video package not found in package config"
+}
+
+$MediaKitVideoDir = ([Uri]$MediaKitVideoPackage.rootUri).LocalPath
+if (-not (Test-Path (Join-Path $MediaKitVideoDir "pubspec.yaml"))) {
+    throw "media_kit_video package directory not found: $MediaKitVideoDir"
+}
+
+$MediaKitDir = Split-Path -Parent $MediaKitVideoDir
+Write-Host "media-kit dir: $MediaKitDir"
 
 $MediaKitVideoPatchPath = "$env:GITHUB_WORKSPACE/$MediaKitVideoPatch"
 
@@ -335,9 +350,7 @@ $MediaKitVideoPatchPath = "$env:GITHUB_WORKSPACE/$MediaKitVideoPatch"
 [System.IO.File]::WriteAllText($MediaKitVideoPatchPath,
     ([System.IO.File]::ReadAllText($MediaKitVideoPatchPath) -replace "`r`n", "`n"))
 
-cd $MediaKitDir.FullName
-
-git apply $MediaKitVideoPatchPath
+git -C $MediaKitDir apply $MediaKitVideoPatchPath
 if ($LASTEXITCODE -eq 0) {
     Write-Host "$MediaKitVideoPatch applied"
 } else {
