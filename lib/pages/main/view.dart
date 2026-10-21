@@ -35,8 +35,11 @@ const _kBottomNavShape = RoundedRectangleBorder(
   borderRadius: .vertical(top: .circular(18)),
 );
 
-/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”
-const _kBottomNavBlur = 28.0;
+/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”。
+///
+/// 28 在 1.5K@120Hz 上滚动时每个模糊 pass 的核半径约 84px，实测代价过高，
+/// 降到与顶栏一致的 16（视觉差异很小，滚动帧时间明显改善）。
+const _kBottomNavBlur = 16.0;
 
 class MainApp extends StatefulWidget {
   const MainApp({super.key});

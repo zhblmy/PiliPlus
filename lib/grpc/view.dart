@@ -12,6 +12,7 @@ abstract final class ViewGrpc {
       GrpcUrl.view,
       ViewReq(bvid: bvid),
       ViewReply.fromBuffer,
+      isolate: true,
     );
   }
 }

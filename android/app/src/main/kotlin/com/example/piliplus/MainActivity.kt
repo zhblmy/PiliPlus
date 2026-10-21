@@ -5,8 +5,48 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager.LayoutParams
 import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : AudioServiceActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DownloadForegroundService.CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                // 后台启动前台服务可能被系统拒绝，这里吞掉异常并把结果回给 Dart，
+                // 避免下载因为「通知起不来」而整体失败
+                "start" -> result.success(
+                    runCatching {
+                        DownloadForegroundService.start(
+                            this,
+                            call.argument<String>("title").orEmpty(),
+                        )
+                    }.isSuccess,
+                )
+
+                "update" -> result.success(
+                    runCatching {
+                        DownloadForegroundService.update(
+                            this,
+                            call.argument<String>("title").orEmpty(),
+                            call.argument<Int>("progress") ?: 0,
+                            call.argument<Int>("total") ?: 0,
+                        )
+                    }.isSuccess,
+                )
+
+                "stop" -> result.success(
+                    runCatching { DownloadForegroundService.stop(this) }.isSuccess,
+                )
+
+                else -> result.notImplemented()
+            }
+        }
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (AndroidHelper.isFoldable) {

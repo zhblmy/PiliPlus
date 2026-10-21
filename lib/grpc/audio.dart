@@ -68,6 +68,7 @@ abstract final class AudioGrpc {
         pagination: Pagination(pageSize: 20, next: next),
       ),
       PlaylistResp.fromBuffer,
+      isolate: true,
     );
   }
 

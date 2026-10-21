@@ -1,6 +1,8 @@
 import 'dart:ui' show BlurStyle, ImageFilter, MaskFilter, PathOperation;
 
+import 'package:PiliPlus/utils/device_state.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:get/get.dart' show Obx;
 import 'package:material_ui/material_ui.dart';
 
 /// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
@@ -86,7 +88,7 @@ class LiquidGlass extends StatelessWidget {
     final scheme = ColorScheme.of(context);
     final isDark = scheme.brightness == .dark;
 
-    final Color fill =
+    final Color rawFill =
         color ??
         (isDark ? scheme.surfaceContainer : scheme.surface).withValues(
           alpha: isDark ? 0.58 : 0.66,
@@ -94,19 +96,28 @@ class LiquidGlass extends StatelessWidget {
     final Color highlight =
         highlightColor ?? Colors.white.withValues(alpha: isDark ? 0.12 : 0.42);
 
-    Widget glass = ClipPath(
-      clipper: ShapeBorderClipper(
-        shape: shape,
-        textDirection: .ltr,
-      ),
-      clipBehavior: clipBehavior,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        // 用 ColoredBox（opaque 命中测试）：玻璃栏应该吃掉自己区域上的手势，
-        // 否则会误触到被模糊盖住的下层内容
-        child: ColoredBox(color: fill, child: child),
-      ),
-    );
+    // BackdropFilter 会在每一帧随下层内容重算高斯模糊，是玻璃栏最大的 GPU 开销；
+    // 低功耗（省电模式 / 低电量 / 温控降档）时直接去掉，换成近乎不透明的纯色底。
+    Widget glass = Obx(() {
+      final lowPower = DeviceState.isLowPower.value;
+      final fill = lowPower ? rawFill.withValues(alpha: 0.94) : rawFill;
+      final content = ColoredBox(color: fill, child: child);
+      return ClipPath(
+        clipper: ShapeBorderClipper(
+          shape: shape,
+          textDirection: .ltr,
+        ),
+        clipBehavior: clipBehavior,
+        child: lowPower
+            ? content
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                // 用 ColoredBox（opaque 命中测试）：玻璃栏应该吃掉自己区域上的手势，
+                // 否则会误触到被模糊盖住的下层内容
+                child: content,
+              ),
+      );
+    });
 
     if (borderWidth > 0 && highlight.a > 0) {
       glass = Stack(

@@ -52,6 +52,7 @@ abstract final class DynGrpc {
         oid: Int64(oid),
       ),
       OpusDetailResp.fromBuffer,
+      isolate: true,
     );
   }
 
@@ -72,6 +73,7 @@ abstract final class DynGrpc {
         page: page,
       ),
       LikeListReply.fromBuffer,
+      isolate: true,
     );
   }
 
@@ -93,6 +95,7 @@ abstract final class DynGrpc {
         repostType: repostType,
       ),
       RepostListRsp.fromBuffer,
+      isolate: true,
     );
   }
 }

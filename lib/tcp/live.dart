@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:PiliPlus/services/logger.dart';
 import 'package:brotli/brotli.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, compute;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -156,11 +156,69 @@ class LiveMessageStream {
 
   static final _zlib = ZLibDecoder();
 
+  /// 单个压缩包超过该体积才值得付 isolate 启动开销
+  static const _isolateThreshold = 64 * 1024;
+
   bool _active = true;
   WebSocketChannel? _channel;
   StreamSubscription? _socketSubscription;
   Timer? _timer;
   static const String logTag = "LiveStreamService";
+
+  int _pendingDecompress = 0;
+  int _generation = 0;
+  Future<void> _decompressQueue = Future<void>.value();
+
+  static Uint8List _decompress((Uint8List, int) args) {
+    final (payload, protocolVer) = args;
+    final data = protocolVer == 2
+        ? _zlib.convert(payload)
+        : const BrotliDecoder().convert(payload);
+    return data is Uint8List ? data : Uint8List.fromList(data);
+  }
+
+  /// 解压是这条链上唯一可能上毫秒级的操作，按体积决定是否投到后台 isolate。
+  ///
+  /// 弹幕消息之间有顺序语义（弹幕引擎按到达顺序排轨道），所以只要还有包在排队，
+  /// 后续包也必须排队，否则小包会越过先到的大包。
+  void _handleCompressed(Uint8List payload, int protocolVer) {
+    if (_pendingDecompress > 0 || payload.length >= _isolateThreshold) {
+      _enqueue(
+        () => payload.length >= _isolateThreshold
+            ? compute(_decompress, (payload, protocolVer))
+            : _decompress((payload, protocolVer)),
+      );
+      return;
+    }
+    try {
+      _processingData(_decompress((payload, protocolVer)));
+    } catch (_) {}
+  }
+
+  /// 未压缩的包也要跟队伍走，否则会越过前面还没解压完的包
+  void _handlePlain(Uint8List data) {
+    if (_pendingDecompress == 0) {
+      _processingData(data);
+    } else {
+      _enqueue(() => data);
+    }
+  }
+
+  void _enqueue(FutureOr<Uint8List> Function() job) {
+    final generation = _generation;
+    _pendingDecompress++;
+    _decompressQueue = _decompressQueue.then((_) async {
+      try {
+        if (generation != _generation) return;
+        final data = await job();
+        if (generation != _generation) return;
+        _processingData(data);
+      } catch (_) {
+      } finally {
+        if (generation == _generation) _pendingDecompress--;
+      }
+    });
+  }
 
   Future<void> init() async {
     final authPackage = AuthPackage(
@@ -284,35 +342,29 @@ class LiveMessageStream {
       if (header.operationCode == 8) {
         _heartBeat();
       }
-      final List<int> decompressedData;
-      try {
-        switch (header.protocolVer) {
-          case 0:
-          case 1:
-            _processingData(data);
-            return;
-          case 2:
-            decompressedData = _zlib.convert(Uint8List.sublistView(data, 0x10));
-            break;
-          case 3:
-            decompressedData = const BrotliDecoder().convert(
-              Uint8List.sublistView(data, 0x10),
-            );
-          //debugPrint('Body: ${utf8.decode()}');
-          default:
-            return;
-        }
-        _processingData(
-          decompressedData is Uint8List
-              ? decompressedData
-              : Uint8List.fromList(decompressedData),
-        );
-      } catch (_) {}
+      switch (header.protocolVer) {
+        case 0:
+        case 1:
+          _handlePlain(data);
+        case 2:
+        case 3:
+          _handleCompressed(
+            Uint8List.sublistView(data, 0x10),
+            header.protocolVer,
+          );
+        //debugPrint('Body: ${utf8.decode()}');
+        default:
+          return;
+      }
     }
   }
 
   void close() {
     _active = false;
+    // 丢弃还挂在队列里的解压任务
+    _generation++;
+    _pendingDecompress = 0;
+    _decompressQueue = Future<void>.value();
     if (kDebugMode) logger.i("$logTag close $hashCode");
     _timer?.cancel();
     _timer = null;

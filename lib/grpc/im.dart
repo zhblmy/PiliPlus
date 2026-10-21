@@ -58,6 +58,7 @@ abstract final class ImGrpc {
         devId: '1',
       ),
       RspSessionMsg.fromBuffer,
+      isolate: true,
     );
   }
 
@@ -70,6 +71,7 @@ abstract final class ImGrpc {
         paginationParams: PaginationParams(offsets: offset?.entries),
       ),
       SessionMainReply.fromBuffer,
+      isolate: true,
     );
   }
 
@@ -84,6 +86,7 @@ abstract final class ImGrpc {
         pageType: pageType,
       ),
       SessionSecondaryReply.fromBuffer,
+      isolate: true,
     );
   }
 
@@ -222,6 +225,7 @@ abstract final class ImGrpc {
       GrpcUrl.sessionDetail,
       ReqSessionDetail(talkerId: talkerId, sessionType: sessionType, uid: uid),
       SessionInfo.fromBuffer,
+      isolate: true,
     );
   }
 }

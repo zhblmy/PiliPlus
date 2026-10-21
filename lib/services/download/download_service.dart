@@ -16,6 +16,7 @@ import 'package:PiliPlus/models_new/pgc/pgc_info_model/result.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/episode.dart' as ugc;
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
+import 'package:PiliPlus/services/download/download_foreground.dart';
 import 'package:PiliPlus/services/download/download_manager.dart';
 import 'package:PiliPlus/utils/cache_manager.dart';
 import 'package:PiliPlus/utils/danmaku_utils.dart';
@@ -53,6 +54,31 @@ class DownloadService extends GetxService {
         ..value!.status = status
         ..refresh();
     }
+    _syncForeground();
+  }
+
+  Timer? _foregroundSync;
+
+  /// 让 Android 前台服务跟随「当前是否有下载在进行」。
+  ///
+  /// 用一个小延迟合并状态抖动：完成/取消后会紧接着拉起队列里的下一个任务，
+  /// 立刻 stop 再 start 会让通知闪一下。
+  void _syncForeground() {
+    _foregroundSync?.cancel();
+    _foregroundSync = Timer(const Duration(milliseconds: 300), () {
+      final entry = curDownload.value;
+      if (entry == null) {
+        // 完成/删除后会立刻接着跑队列里的下一个，别在交接间隙关服务
+        if (waitDownloadQueue.isEmpty) DownloadForeground.stop();
+      } else if (entry.status.isDownloading) {
+        DownloadForeground.start(entry.title);
+      } else if (entry.status == DownloadStatus.pause) {
+        if (waitDownloadQueue.isEmpty) DownloadForeground.stop();
+      } else {
+        // 失败：不会再自动续传，直接收工
+        DownloadForeground.stop();
+      }
+    });
   }
 
   DownloadManager? _downloadManager;
@@ -527,6 +553,9 @@ class DownloadService extends GetxService {
         ..downloadedBytes = progress
         ..status = DownloadStatus.downloading;
       curDownload.refresh();
+      // 首次状态切换时若因后台限制没拉起来，这里会退避重试
+      DownloadForeground.start(entry.title);
+      DownloadForeground.update(entry.title, progress, entry.totalBytes);
     }
   }
 
@@ -585,6 +614,7 @@ class DownloadService extends GetxService {
     _downloadManager = null;
     _audioDownloadManager = null;
     nextDownload();
+    _syncForeground();
   }
 
   void nextDownload() {
@@ -662,6 +692,7 @@ class DownloadService extends GetxService {
     if (downloadNext) {
       nextDownload();
     }
+    _syncForeground();
   }
 }
 

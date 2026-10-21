@@ -17,8 +17,11 @@ const _kIndicatorHeight = _kNavigationHeight - 2 * _kIndicatorPaddingInt;
 const _kIndicatorWidth = 90.0;
 const _kIndicatorPaddingInt = 4.0;
 
-/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃
-const _kBlurSigma = 28.0;
+/// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃。
+///
+/// 但 28 在 1.5K@120Hz 上滚动时每帧都要重算一次模糊 pass，代价过高；
+/// 降到 16 后视觉差异很小，滚动帧时间明显改善。
+const _kBlurSigma = 16.0;
 
 /// 按住气泡时的放大倍数（手指按下 → 放大，抬手 → 缩回）
 const _kPressScale = 1.3;

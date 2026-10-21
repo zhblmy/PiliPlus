@@ -61,6 +61,43 @@ import 'package:protobuf/protobuf.dart';
 
 part 'package:PiliPlus/common/widgets/context_menu/reply_menu_helper.dart';
 
+class _CachedContentSpan {
+  const _CachedContentSpan({
+    required this.content,
+    required this.colorScheme,
+    required this.wordRe,
+    required this.isNote,
+    required this.upTop,
+    required this.timeLength,
+    required this.span,
+  });
+
+  final Content content;
+  final ColorScheme colorScheme;
+  final bool wordRe;
+  final bool isNote;
+  final bool upTop;
+
+  /// 时间戳能否跳转取决于播放器是否已知时长，见 [ReplyItemGrpc._timeLengthFor]
+  final int? timeLength;
+  final TextSpan span;
+
+  bool matches({
+    required Content content,
+    required ColorScheme colorScheme,
+    required bool wordRe,
+    required bool isNote,
+    required bool upTop,
+    required int? timeLength,
+  }) =>
+      identical(this.content, content) &&
+      this.colorScheme == colorScheme &&
+      this.wordRe == wordRe &&
+      this.isNote == isNote &&
+      this.upTop == upTop &&
+      this.timeLength == timeLength;
+}
+
 class ReplyItemGrpc extends StatelessWidget {
   const ReplyItemGrpc({
     super.key,
@@ -96,6 +133,28 @@ class ReplyItemGrpc extends StatelessWidget {
   static final _timeRegExp = RegExp(r'^(?:\d+[:：])?\d+[:：]\d+$');
   static bool enableWordRe = Pref.enableWordRe;
   static int? replyLengthLimit = Pref.replyLengthLimit;
+
+  static const _regexCacheLimit = 256;
+  static final Map<String, RegExp> _regexCache = <String, RegExp>{};
+  static final _spanCache = Expando<_CachedContentSpan>(
+    'reply_item_content_span',
+  );
+  static final _timeScanRegExp = RegExp(r'\d+[:：]\d+');
+
+  /// 正则编译是纯函数，按 pattern 串做有上限的 LRU 复用
+  static RegExp _cachedPattern(String patternStr) {
+    final cached = _regexCache.remove(patternStr);
+    if (cached != null) {
+      _regexCache[patternStr] = cached;
+      return cached;
+    }
+    final pattern = RegExp(patternStr);
+    if (_regexCache.length >= _regexCacheLimit) {
+      _regexCache.remove(_regexCache.keys.first);
+    }
+    _regexCache[patternStr] = pattern;
+    return pattern;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -345,32 +404,7 @@ class ReplyItemGrpc extends StatelessWidget {
             primary: colorScheme.primary,
             style: const TextStyle(height: 1.75, fontSize: 14),
             maxLines: replyLevel == 1 ? replyLengthLimit : null,
-            TextSpan(
-              children: [
-                if (replyControl.isUpTop) ...[
-                  const WidgetSpan(
-                    alignment: .middle,
-                    child: PBadge(
-                      text: 'TOP',
-                      size: .small,
-                      isStack: false,
-                      type: .line_primary,
-                      fontSize: 9,
-                      textScaleFactor: 1,
-                    ),
-                  ),
-                  const TextSpan(text: ' '),
-                ],
-                _buildMessage(
-                  context,
-                  colorScheme,
-                  replyControl.showTranslation
-                      ? replyItem.translatedContent
-                      : replyItem.content,
-                  replyControl,
-                ),
-              ],
-            ),
+            _buildContentSpan(context, colorScheme, replyControl),
           ),
         ),
         if (replyItem.content.pictures.isNotEmpty) ...[
@@ -713,6 +747,78 @@ class ReplyItemGrpc extends StatelessWidget {
     );
   }
 
+  /// 评论正文的 span 树只和 (内容, 配色, 词搜索开关, 笔记/置顶标记, 视频时长) 有关。
+  ///
+  /// 用 Expando 按条目缓存：弱引用、随条目回收，不需要容量上限；条目被回收时
+  /// span 也一起释放。注意这里只省掉「构建」的成本——`BaseText` 每次都会新建
+  /// 外层 span，`RenderParagraph` 仍会重新排版。
+  TextSpan _buildContentSpan(
+    BuildContext context,
+    ColorScheme colorScheme,
+    ReplyControl replyControl,
+  ) {
+    final content = replyControl.showTranslation
+        ? replyItem.translatedContent
+        : replyItem.content;
+    final isNote = replyControl.isNote && replyControl.isNoteV2;
+    final timeLength = _timeLengthFor(content);
+    final cached = _spanCache[replyItem];
+    if (cached != null &&
+        cached.matches(
+          content: content,
+          colorScheme: colorScheme,
+          wordRe: enableWordRe,
+          isNote: isNote,
+          upTop: replyControl.isUpTop,
+          timeLength: timeLength,
+        )) {
+      return cached.span;
+    }
+
+    final span = TextSpan(
+      children: [
+        if (replyControl.isUpTop) ...[
+          const WidgetSpan(
+            alignment: .middle,
+            child: PBadge(
+              text: 'TOP',
+              size: .small,
+              isStack: false,
+              type: .line_primary,
+              fontSize: 9,
+              textScaleFactor: 1,
+            ),
+          ),
+          const TextSpan(text: ' '),
+        ],
+        _buildMessage(context, colorScheme, content, replyControl),
+      ],
+    );
+    _spanCache[replyItem] = _CachedContentSpan(
+      content: content,
+      colorScheme: colorScheme,
+      wordRe: enableWordRe,
+      isNote: isNote,
+      upTop: replyControl.isUpTop,
+      timeLength: timeLength,
+      span: span,
+    );
+    return span;
+  }
+
+  /// 时间轴能否跳转依赖播放器已知的时长；把它作为缓存 key 的一部分，
+  /// 否则首次构建时视频信息还没到，时间戳会被永久缓存成纯文本。
+  int? _timeLengthFor(Content content) {
+    if (!_timeScanRegExp.hasMatch(content.message)) return null;
+    try {
+      return Get.find<VideoDetailController>(
+        tag: getTag?.call() ?? Get.arguments['heroTag'],
+      ).data.timeLength;
+    } catch (_) {
+      return null;
+    }
+  }
+
   InlineSpan _buildMessage(
     BuildContext context,
     ColorScheme colorScheme,
@@ -736,7 +842,7 @@ class ReplyItemGrpc extends StatelessWidget {
       r'\{vote:\d+?\}',
       Constants.urlRegex.pattern,
     ].join('|');
-    final RegExp pattern = RegExp(patternStr);
+    final RegExp pattern = _cachedPattern(patternStr);
 
     late List<String> matchedUrls = [];
 
@@ -867,8 +973,13 @@ class ReplyItemGrpc extends StatelessWidget {
               text: '投票: ${content.vote.title}',
               style: TextStyle(color: colorScheme.primary),
               recognizer: NoDeadlineTapGestureRecognizer()
-                ..onTap = () =>
-                    showVoteDialog(context, content.vote.id.toInt()),
+                ..onTap = () {
+                  // span 会被缓存复用，这里不能在构建期捕获 BuildContext
+                  final ctx = Get.context;
+                  if (ctx != null) {
+                    showVoteDialog(ctx, content.vote.id.toInt());
+                  }
+                },
             ),
           );
         } else if (_timeRegExp.hasMatch(matchStr)) {

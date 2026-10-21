@@ -243,6 +243,13 @@
             </intent-filter>
         </service>
 
+        <!-- 下载前台服务：不做前台服务时，澎湃 OS 的后台冻结会直接掐断下载 -->
+        <service
+            android:name=".DownloadForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="true" />
+
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"
             android:theme="@style/Ucrop.CropTheme" />
@@ -276,6 +283,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!--
       Media access permissions.

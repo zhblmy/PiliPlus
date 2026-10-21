@@ -11,7 +11,12 @@ import 'package:flutter/foundation.dart' show kDebugMode, compute;
 import 'package:protobuf/protobuf.dart' show GeneratedMessage;
 
 abstract final class GrpcReq {
-  static const _isolateSize = 256 * 1024;
+  /// 是否值得投到后台 isolate 的阈值，单位是**压缩后**的 gRPC 帧长度。
+  ///
+  /// 256KB 的线上体积对评论/动态列表来说几乎不可能触发（一页 20 条通常只有几万字节），
+  /// 导致 `isolate: true` 形同虚设；64KB 压缩数据解压后通常已是数百 KB，
+  /// 解析耗时远大于一次 isolate 启动开销。
+  static const _isolateSize = 64 * 1024;
   static const _gzipMinLength = 64;
 
   static final options = Options(
