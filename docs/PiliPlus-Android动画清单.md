@@ -178,6 +178,49 @@ Future<void> _showTransitionDialog(
 `fade`、`fadeIn`、`rightToLeft`、`leftToRight`、`upToDown`、`downToUp`、`zoom`、
 `cupertino`、`size`、`native`、`sharedAxis`、`noTransition` 等。
 
+### 1.3.1 iOS 风格（`cupertino`）的转场补丁
+
+GetX 原生的 `Transition.cupertino` 只是套了一层 `CupertinoPageTransition`：
+时长写死 300ms、没有左缘拖动返回，观感是「页面唰一下滑过去、还没法拖回来」。
+现在由 `lib/scripts/getx_ios_transition.patch` 在构建前修改 pub cache 里的 getx：
+
+- `transitionDuration`：`cupertino` / `cupertinoDialog` 用
+  `CupertinoRouteTransitionMixin.kTransitionDuration`（500ms）；
+  `native` 在 iOS/macOS 上同理（那边 `buildPageTransitions` 本来就是走
+  Cupertino builder，只是时长被压成了 300ms）；其余仍是 300ms；
+- `buildPageTransitions`：`cupertino` 分支改为调用
+  `CupertinoRouteTransitionMixin.buildPageTransitions`，从而带上
+  左缘 20px 的交互式返回（拖动时线性跟手，松手按位置/速度决定进退）、
+  上一页 1/3 视差与左缘阴影；
+- `GetPageRoute` 的 `barrierColor`：`cupertino` 下默认用 iOS 的
+  `0x18000000`，转场期间上一页会被轻轻压暗（其余过渡仍为 `null`）。
+
+因为改的是 `GetPageRoute` 本身，`Get.toNamed` 和 `Get.to(...)` 打开的页面
+都会生效，不需要逐个页面处理。
+
+**注意**：这是构建期补丁，本地调试前要先跑
+`lib/scripts/patch.ps1 android`（CI 已包含；getx 这段可重复执行，已打过会跳过）。
+如果换过 getx 的 ref 或删过 pub cache，需要重新跑一次。
+
+**Android 上的左缘滑动**：manifest 里开了 `enableOnBackInvokedCallback="true"`
+（预测性返回），Android 13+ 的左/右缘滑动**有可能**先被系统手势接管，此时拿到
+的是系统返回事件而不是 Flutter 的触摸事件，走系统动画。所以「拖回上一页」在
+iOS/macOS 上体验最完整；Android 上若不生效，属于系统手势优先，不是 bug。
+
+**手势会被既有返回拦截逻辑挡住**：`_CupertinoBackGestureDetector` 走的是
+`ModalRoute.popGestureEnabled`，所以页面上只要有 `PopScope(canPop: false)`
+（视频页/直播页的全屏、Desktop PiP、各列表的多选态）就**不会**被左缘滑动绕过，
+会照常先走 `onPopInvokedWithResult`。
+
+**关于这类转场的掉帧**：横向滑动会把上一页和当前页整页一起合成（每帧两张全屏
+layer），确实比 `sharedAxis` 重。但「玻璃栏 `BackdropFilter` 每帧重算模糊」这个
+猜测未经验证 —— 转场中两页的**内容**是静止的（只有 transform 在变），模糊结果
+有机会被缓存复用；而 iOS 原生在转场时也一直保持模糊。所以在实测之前**不要**
+在转场期间把玻璃降档成纯色，那会变成肉眼可见的风格回退。
+需要取证时用：`flutter run --profile` → DevTools Performance → 录「A 页 → B 页」
+的滑动过程，看 raster 线程的帧时间与是否出现 `saveLayer`/`BackdropFilter` 相关
+的耗时。若确认是模糊导致，再考虑降档，并且只对低端机生效。
+
 ### 1.4 自定义弹出路由 `PublishRoute`（底部滑入 / 自定义过渡）
 
 位置：`lib/pages/common/publish/publish_route.dart`（**全文件**）

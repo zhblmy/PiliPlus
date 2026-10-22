@@ -820,6 +820,12 @@ abstract final class Pref {
   ///
   /// 另外注意：GetX 的路由不走 `ThemeData.pageTransitionsTheme`，
   /// 改 `lib/utils/theme_utils.dart` 里的 `pageTransitionsTheme` 对本 App 无效。
+  ///
+  /// [Transition.cupertino] 走的是 GetX 自己的 `GetPageRoute` 转场，原实现只有
+  /// 位移、时长固定 300ms 且没有左缘返回手势；构建时由
+  /// `lib/scripts/getx_ios_transition.patch` 换成 Flutter 原生的
+  /// `CupertinoRouteTransitionMixin`（500ms + 交互式返回 + 上一页压暗），
+  /// `Transition.native` 在 iOS/macOS 上同理（那边本来就走 Cupertino builder）。
   static Transition get pageTransition =>
       Transition.values[_setting.get(
         SettingBoxKey.pageTransition,

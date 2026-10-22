@@ -326,6 +326,69 @@ foreach ($patch in $patches_cupertino) {
     }
 }
 
+$PackageConfigPath = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"
+if (-not (Test-Path $PackageConfigPath)) {
+    throw "Dart package config not found: $PackageConfigPath"
+}
+
+$PackageConfig = Get-Content $PackageConfigPath -Raw | ConvertFrom-Json
+
+# 从 package_config 取包目录，而不是猜 pub cache 里的目录名：改过 ref 之后
+# cache 里会同时存在多个版本，按名字排序取最后一个未必是真正被解析到的那个。
+function Get-PackageDir($Name) {
+    $Package = $PackageConfig.packages |
+        Where-Object { $_.name -eq $Name } |
+        Select-Object -First 1
+    if (-not $Package) {
+        throw "$Name package not found in package config"
+    }
+    # rootUri 末位是否带斜杠取决于包的类型（仓库根目录会带），统一去掉，
+    # 免得 `Split-Path -Parent` 之类拿到意料之外的结果
+    $Dir = ([Uri]$Package.rootUri).LocalPath.TrimEnd('\', '/')
+    if (-not (Test-Path (Join-Path $Dir "pubspec.yaml"))) {
+        throw "$Name package directory not found: $Dir"
+    }
+    return $Dir
+}
+
+# getx 的 `Transition.cupertino` 只有位移：时长固定 300ms，也没有左缘拖动返回。
+# 补丁把它换成 Flutter 原生的 `CupertinoRouteTransitionMixin`（500ms + 交互式
+# 返回），命名路由和 `Get.to(...)` 都会生效。
+$GetXIosTransitionPatch = "lib/scripts/getx_ios_transition.patch"
+
+$GetXDir = Get-PackageDir "get"
+if (-not (Test-Path (Join-Path $GetXDir ".git"))) {
+    throw "getx must stay a git dependency for $GetXIosTransitionPatch to apply: $GetXDir is not a git repo"
+}
+Write-Host "getx dir: $GetXDir"
+
+$GetXIosTransitionPatchPath = "$env:GITHUB_WORKSPACE/$GetXIosTransitionPatch"
+
+# normalize CRLF -> LF, keep UTF-8 without BOM (the patch contains non-ASCII comments)
+[System.IO.File]::WriteAllText($GetXIosTransitionPatchPath,
+    ([System.IO.File]::ReadAllText($GetXIosTransitionPatchPath) -replace "`r`n", "`n"))
+
+Push-Location $GetXDir
+try {
+    # `flutter pub get` 不会覆盖 pub cache 里的 git 依赖源码，所以补丁会一直留着；
+    # 本脚本可能被重复执行，已打过就跳过（否则 git apply 会失败）。
+    git apply --reverse --check $GetXIosTransitionPatchPath 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "$GetXIosTransitionPatch already applied"
+    } else {
+        git apply $GetXIosTransitionPatchPath
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "$GetXIosTransitionPatch applied"
+        } else {
+            throw "failed to apply $GetXIosTransitionPatch to $GetXDir" +
+                " (getx ref changed? delete the getx-* dir under the pub cache and re-run)"
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
 # media_kit_video is a sub-package of the `media-kit` git dependency.
 # Upstream only syncs the Android surface size when vo == 'gpu', so with
 # vo=gpu-next the SurfaceTexture stays 1x1 (and android-surface-size is never
@@ -333,25 +396,7 @@ foreach ($patch in $patches_cupertino) {
 # (MediaCodec output rendered straight into the Surface) needs the same sync.
 $MediaKitVideoPatch = "lib/scripts/media_kit_video.patch"
 
-$PackageConfigPath = Join-Path $env:GITHUB_WORKSPACE ".dart_tool/package_config.json"
-if (-not (Test-Path $PackageConfigPath)) {
-    throw "Dart package config not found: $PackageConfigPath"
-}
-
-$PackageConfig = Get-Content $PackageConfigPath -Raw | ConvertFrom-Json
-$MediaKitVideoPackage = $PackageConfig.packages |
-    Where-Object { $_.name -eq "media_kit_video" } |
-    Select-Object -First 1
-
-if (-not $MediaKitVideoPackage) {
-    throw "media_kit_video package not found in package config"
-}
-
-$MediaKitVideoDir = ([Uri]$MediaKitVideoPackage.rootUri).LocalPath
-if (-not (Test-Path (Join-Path $MediaKitVideoDir "pubspec.yaml"))) {
-    throw "media_kit_video package directory not found: $MediaKitVideoDir"
-}
-
+$MediaKitVideoDir = Get-PackageDir "media_kit_video"
 $MediaKitDir = Split-Path -Parent $MediaKitVideoDir
 Write-Host "media-kit dir: $MediaKitDir"
 

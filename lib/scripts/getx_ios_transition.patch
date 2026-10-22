@@ -1,0 +1,74 @@
+diff --git a/lib/get_navigation/src/routes/default_route.dart b/lib/get_navigation/src/routes/default_route.dart
+index 14052a8..62a5bb1 100644
+--- a/lib/get_navigation/src/routes/default_route.dart
++++ b/lib/get_navigation/src/routes/default_route.dart
+@@ -27,7 +27,7 @@ class GetPageRoute<T> extends PageRoute<T>
+     super.settings,
+     this.parameter,
+     this.barrierDismissible = false,
+-    this.barrierColor,
++    Color? barrierColor,
+     this.binding,
+     this.bindings,
+     this.routeName,
+@@ -35,7 +35,12 @@ class GetPageRoute<T> extends PageRoute<T>
+     this.barrierLabel,
+     this.maintainState = true,
+     this.middlewares,
+-  });
++  }) : barrierColor = barrierColor ??
++            ((Get.defaultTransition == Transition.cupertino ||
++                    Get.defaultTransition == Transition.cupertinoDialog)
++                // iOS 转场期间上一页会轻微压暗（与 CupertinoPageRoute 一致）
++                ? const Color(0x18000000)
++                : null);
+ 
+   final GetPageBuilder? page;
+   final String? routeName;
+diff --git a/lib/get_navigation/src/routes/get_transition_mixin.dart b/lib/get_navigation/src/routes/get_transition_mixin.dart
+index b916bb4..1cabc70 100644
+--- a/lib/get_navigation/src/routes/get_transition_mixin.dart
++++ b/lib/get_navigation/src/routes/get_transition_mixin.dart
+@@ -14,7 +14,19 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
+   Widget buildContent(BuildContext context);
+ 
+   @override
+-  Duration get transitionDuration => const Duration(milliseconds: 300);
++  Duration get transitionDuration {
++    // `buildPageTransitions` 里 `native` 在 iOS/macOS 上走的就是 Cupertino
++    // 那套 builder，所以那边也要用 Flutter 原生的 500ms；否则「500ms 的动效
++    // 曲线被压进 300ms」，起步会明显偏快、收尾发飘。
++    switch (Get.defaultTransition) {
++      case Transition.cupertino || Transition.cupertinoDialog:
++        return CupertinoRouteTransitionMixin.kTransitionDuration;
++      case Transition.native when Platform.isIOS || Platform.isMacOS:
++        return CupertinoRouteTransitionMixin.kTransitionDuration;
++      default:
++        return const Duration(milliseconds: 300);
++    }
++  }
+ 
+   // The transitionDuration is used to create the AnimationController which is only
+   // built once, so when page transition builder is updated and transitionDuration
+@@ -148,11 +160,16 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
+         );
+ 
+       case Transition.cupertino || Transition.cupertinoDialog:
+-        return CupertinoPageTransition(
+-          primaryRouteAnimation: animation,
+-          secondaryRouteAnimation: secondaryAnimation,
+-          linearTransition: rawRoute.popGestureInProgress,
+-          child: child,
++        // 不要用裸的 CupertinoPageTransition：它只做位移，没有左缘拖动返回。
++        // CupertinoRouteTransitionMixin.buildPageTransitions 会额外套一层
++        // _CupertinoBackGestureDetector，并正确处理 fullscreenDialog 与
++        // popGestureInProgress（拖动时线性跟手）。
++        return CupertinoRouteTransitionMixin.buildPageTransitions<T>(
++          rawRoute,
++          context,
++          animation,
++          secondaryAnimation,
++          child,
+         );
+ 
+       case Transition.sharedAxis:

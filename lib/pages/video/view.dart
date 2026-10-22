@@ -190,17 +190,20 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     }
   }
 
-  /// 转场动画（cupertino/native，300ms）期间先把播放器初始化挂起。
+  /// 转场动画期间先把播放器初始化挂起（cupertino 500ms，其余 300ms）。
   ///
   /// 取流请求照旧立刻发起（纯网络，不占 UI），但真正 `open` 媒体
   /// （重建解码器 + 纹理、上屏首帧）是重活，正好会压在转场收尾那一帧上：
   /// 表现就是「转场最后卡一下」和「转场时播放器闪一下」。
-  /// 所以推入本页时拿一个信号把这一步卡到转场播完之后；
-  /// 兑底 200ms（动画被静音时 runAfterRouteAnimation 会晚一步）。
+  /// 所以推入本页时拿一个信号把这一步卡到转场播完之后。
+  ///
+  /// 兜底 600ms：必须大于最长的转场（cupertino 500ms），否则会在动画播完前
+  /// 提前放行、白等一场；正常路径还是 `runAfterRouteAnimation` 的动画状态监听
+  /// （另有 700ms 兜底），这个定时器只在帧回调没跑到时才会生效。
   void _deferPlayerInitUntilTransitionEnd() {
     final gate = Completer<void>();
     videoDetailController.deferPlayerInit(gate.future);
-    Future.delayed(const Duration(milliseconds: 200), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (!gate.isCompleted) gate.complete();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
