@@ -112,6 +112,10 @@ class _HomePageState extends CommonPageState<HomePage>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     )..addListener(_onBarAnimTick);
+    _showTopBarRequestWorker = ever<int>(
+      _homeController.showTopBarRequest,
+      (_) => _onShowTopBarRequested(),
+    );
   }
 
   /// 切分类：换列表了，先把收起进度对齐到新 Tab 的真实位置
@@ -140,6 +144,7 @@ class _HomePageState extends CommonPageState<HomePage>
   @override
   void dispose() {
     _homeController.tabController.removeListener(_onTabChanged);
+    _showTopBarRequestWorker?.dispose();
     _barAnim.dispose();
     _barCollapse.dispose();
     super.dispose();
@@ -290,8 +295,6 @@ class _HomePageState extends CommonPageState<HomePage>
           mainAxisSize: .min,
           children: [
             SizedBox(height: statusBarHeight),
-            // 0 尺寸的桥：接住 setSearchBar() 的「显示顶栏」请求
-            _showTopBarRequest(),
             // CustomHeightWidget 收起时只会把内容挪走、并不裁剪，
             // 超出搜索栏那块的会画到状态栏那片玻璃上，必须裁掉。
             ClipRect(
@@ -387,28 +390,22 @@ class _HomePageState extends CommonPageState<HomePage>
     );
   }
 
+  /// 「把顶栏显示出来」请求的监听（见 [MainController.setSearchBar]）
+  Worker? _showTopBarRequestWorker;
+
   /// 接住「把顶栏显示出来」这个请求。
   ///
   /// `MainController.setSearchBar()`（在别的 Tab 按返回键回到首页时会调用）
-  /// 会把 `homeController.showTopBar` 置 true；即时模式的旧实现就是靠它把搜索栏
-  /// 展开的。现在顶栏由本页的收起动画驱动，这里把它接回来：处于收起状态又收到
-  /// 「要求显示」就播一次展开动画。
-  /// 用 0 尺寸的 Obx 读这个 rx（而不是自己 subscribe）：交给 GetX 的响应式刷新，
-  /// 少一份要手动释放的订阅，也不影响布局。
-  Widget _showTopBarRequest() {
-    final showTopBar = _homeController.showTopBar;
-    if (showTopBar == null) return const SizedBox.shrink();
-    return Obx(() {
-      if (showTopBar.value &&
-          _barCollapse.value > 0.0 &&
-          !_barAnim.isAnimating) {
-        // Obx 的 builder 在 build 期间跑，动画要等这一帧结束再驱动
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _animateBar(false);
-        });
-      }
-      return const SizedBox.shrink();
-    });
+  /// 会发一次请求；即时模式下发过请求就播一次展开动画。
+  ///
+  /// 以前是在 build 里用 `Obx` 读状态做判断：GetX 的 `Obx` 每次父级重建都会
+  /// 重跑 builder，于是键盘/旋转/主题/字号等任何一次重建都会在「顶栏处于收起
+  /// 状态」时把它悄悄弹开。请求是事件，不该由 build 的时机决定，所以改成监听。
+  void _onShowTopBarRequested() {
+    // 同步模式的收起进度就是滚动位置，动画不参与
+    if (!_instant) return;
+    if (!_barCollapsible) return;
+    if (_barCollapse.value > 0 && !_barAnim.isAnimating) _animateBar(false);
   }
 
   Widget searchBar() {

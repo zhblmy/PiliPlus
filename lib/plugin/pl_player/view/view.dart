@@ -2070,8 +2070,12 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
 
   Future<void> _screenshotWebp() async {
     final videoInfo = videoDetailController.data;
-    final ids = videoInfo.dash!.video!.availableVideoQualities;
+    // durl 兜底 / 本地文件没有 dash，取不到可选画质
+    final videoList = videoInfo.dash?.video;
+    if (videoList == null || videoList.isEmpty) return;
+    final ids = videoList.availableVideoQualities;
     final video = videoDetailController.findVideoByQa(ids.min);
+    if (video == null) return;
 
     String? url = video.baseUrl;
     if (url == null) return;
@@ -2112,6 +2116,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                   value: () => qa.code,
                   onSelected: (value) {
                     final video = videoDetailController.findVideoByQa(value);
+                    if (video == null) return false;
                     url = video.baseUrl;
                     qa = video.quality;
                     return false;

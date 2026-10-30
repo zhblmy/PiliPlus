@@ -23,37 +23,40 @@ abstract class CommonListController<R, T> extends CommonController<R, T> {
   Future<void> queryData([bool isRefresh = true]) async {
     if (isLoading || (!isRefresh && isEnd)) return;
     isLoading = true;
-    final LoadingState<R> res = await customGetData();
-    if (res case Success(:final response)) {
-      if (!customHandleResponse(isRefresh, res)) {
-        final dataList = getDataList(response);
-        if (dataList == null || dataList.isEmpty) {
-          isEnd = true;
+    // 请求或响应处理抛异常时也必须复位，否则之后所有刷新/加载都会被挡住
+    try {
+      final LoadingState<R> res = await customGetData();
+      if (res case Success(:final response)) {
+        if (!customHandleResponse(isRefresh, res)) {
+          final dataList = getDataList(response);
+          if (dataList == null || dataList.isEmpty) {
+            isEnd = true;
+            if (isRefresh) {
+              loadingState.value = Success(dataList);
+            } else if (hasFooter == true) {
+              loadingState.refresh();
+            }
+            return;
+          }
+          handleListResponse(dataList);
           if (isRefresh) {
+            checkIsEnd(dataList.length);
             loadingState.value = Success(dataList);
-          } else if (hasFooter == true) {
+          } else if (loadingState.value case Success(:final response)) {
+            response!.addAll(dataList);
+            checkIsEnd(response.length);
             loadingState.refresh();
           }
-          isLoading = false;
-          return;
         }
-        handleListResponse(dataList);
-        if (isRefresh) {
-          checkIsEnd(dataList.length);
-          loadingState.value = Success(dataList);
-        } else if (loadingState.value case Success(:final response)) {
-          response!.addAll(dataList);
-          checkIsEnd(response.length);
-          loadingState.refresh();
+        page++;
+      } else {
+        if (isRefresh && !handleError(res is Error ? res.errMsg : null)) {
+          loadingState.value = res as Error;
         }
       }
-      page++;
-    } else {
-      if (isRefresh && !handleError(res is Error ? res.errMsg : null)) {
-        loadingState.value = res as Error;
-      }
+    } finally {
+      isLoading = false;
     }
-    isLoading = false;
   }
 
   @override

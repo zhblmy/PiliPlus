@@ -517,10 +517,15 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     videoDetailController
       ..isPortrait = isPortrait = maxHeight >= maxWidth
       ..minVideoHeight = minVideoHeight
-      ..maxVideoHeight = maxVideoHeight
-      ..videoHeight = videoDetailController.isVertical.value
+      ..maxVideoHeight = maxVideoHeight;
+    // 展开/收起动画进行中（键盘、旋转、主题等引起的依赖变化）不能重置视频高度，
+    // 否则 _calcAnimHeight 会按错误的起点/终点算，动画直接跳变
+    if (!videoDetailController.isExpanding &&
+        !videoDetailController.isCollapsing) {
+      videoDetailController.videoHeight = videoDetailController.isVertical.value
           ? maxVideoHeight
           : minVideoHeight;
+    }
 
     theme = videoDetailController.plPlayerController.darkVideoPage
         ? ThemeUtils.darkTheme
@@ -1003,7 +1008,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
                         else if (showIntro)
                           KeepAliveWrapper(
                             child: CustomScrollView(
-                              key: const PageStorageKey(CommonIntroController),
+                              // 与左侧简介共用同一个 PageStorage 桶，
+                              // key 必须区分开，否则两处滚动位置会互相覆盖
+                              key: const PageStorageKey('relatedIntro'),
                               controller:
                                   videoDetailController.effectiveIntroScrollCtr,
                               slivers: [
@@ -1664,7 +1671,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
           ? videoDetailController.effectiveIntroScrollCtr
           : null,
       physics: !needCtr ? platformAlwaysClampingPhysics : null,
-      key: const PageStorageKey(CommonIntroController),
+      key: const PageStorageKey('localIntro'),
       slivers: [
         SliverPadding(
           padding: EdgeInsets.only(top: 7, bottom: padding.bottom + 100),
@@ -1689,7 +1696,7 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     }
 
     Widget child = CustomScrollView(
-      key: const PageStorageKey(CommonIntroController),
+      key: const PageStorageKey('videoIntro'),
       controller: needCtr
           ? videoDetailController.effectiveIntroScrollCtr
           : null,

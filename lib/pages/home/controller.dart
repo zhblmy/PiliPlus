@@ -20,8 +20,21 @@ class HomeController extends GetxController
   late List<HomeTabType> tabs;
   late TabController tabController;
 
+  /// 即时模式下顶栏的「显示 / 隐藏」两态标志；`null` 表示不是即时模式。
+  ///
+  /// 顶栏收起动画已经不再读它的值（展开请求改由 [showTopBarRequest] 发事件），
+  /// 它的实际用途是让 `CommonPageState` 判断「要不要挂方向监听」——同一个监听
+  /// 还负责底栏两态切换，所以这个字段本身不能删。
   RxBool? showTopBar;
   late final bool hideTopBar;
+
+  /// 「把顶栏展开」的请求事件：每 +1 当作一次新请求。
+  ///
+  /// 不复用 [showTopBar]：它已经是滚动方向的两态标志，
+  /// 在它本来就是 true 时再置 true 不会触发任何监听。
+  final RxInt showTopBarRequest = 0.obs;
+
+  void requestShowTopBar() => showTopBarRequest.value++;
 
   bool enableSearchWord = Pref.enableSearchWord;
   late final RxString defaultSearch = ''.obs;

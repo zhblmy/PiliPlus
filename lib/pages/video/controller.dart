@@ -652,9 +652,14 @@ class VideoDetailController extends GetxController
     }
   }
 
-  VideoItem findVideoByQa(int qa, {bool setCodecs = false}) {
+  /// 按画质 [qa] 与当前解码格式挑出可播放的视频流。
+  ///
+  /// 没有匹配项（durl 兜底数据、或切视频后残留的旧 qa）时返回 null，
+  /// 由调用方决定是否回退，不要在这里强解包。
+  VideoItem? findVideoByQa(int qa, {bool setCodecs = false}) {
     /// 根据currentVideoQa和currentDecodeFormats 重新设置videoUrl
-    final videoList = data.dash!.video!.where((i) => i.id == qa).toList();
+    final videoList = data.dash?.video?.where((i) => i.id == qa).toList();
+    if (videoList == null || videoList.isEmpty) return null;
 
     final currentCodes = currentDecodeFormats.codes;
     VideoItem? bestVideo;
@@ -690,22 +695,37 @@ class VideoDetailController extends GetxController
   void updatePlayer() {
     final currentVideoQa = this.currentVideoQa.value;
     if (currentVideoQa == null) return;
+    // durl 兜底（data.dash == null）或旧 qa 不在新数据里时没有可切的流
+    final videoItem = findVideoByQa(currentVideoQa.code, setCodecs: true);
+    if (videoItem == null) {
+      if (kDebugMode) {
+        debugPrint('updatePlayer: no stream for qa ${currentVideoQa.code}');
+      }
+      return;
+    }
     _autoPlay.value = true;
     playedTime = plPlayerController.videoPlayerController?.state.position;
     plPlayerController
       ..isBuffering.value = false
       ..buffered.value = 0;
 
-    firstVideo = findVideoByQa(currentVideoQa.code, setCodecs: true);
+    firstVideo = videoItem;
     videoUrl = VideoUtils.getCdnUrl(firstVideo.playUrls);
 
     /// 根据currentAudioQa 重新设置audioUrl
     if (currentAudioQa != null) {
-      final firstAudio = data.dash!.audio!.firstWhere(
-        (i) => i.id == currentAudioQa!.code,
-        orElse: () => data.dash!.audio!.first,
-      );
-      audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
+      final audioList = data.dash?.audio;
+      if (audioList != null && audioList.isNotEmpty) {
+        final firstAudio = audioList.firstWhere(
+          (i) => i.id == currentAudioQa!.code,
+          orElse: () => audioList.first,
+        );
+        audioUrl = VideoUtils.getCdnUrl(firstAudio.playUrls, isAudio: true);
+      } else {
+        // 当前视频没有音轨：旧音质不能留，否则下次切解码格式会强解包崩溃
+        audioUrl = '';
+        currentAudioQa = null;
+      }
     }
 
     playerInit();
@@ -1001,6 +1021,7 @@ class VideoDetailController extends GetxController
         currentAudioQa = AudioQuality.fromCode(firstAudio.id);
       } else {
         audioUrl = '';
+        currentAudioQa = null;
       }
       await initPlayerIfNeeded(autoFullScreenFlag);
     } else {
@@ -1406,7 +1427,7 @@ class VideoDetailController extends GetxController
       if (plPlayerController.enableBlock) {
         if (listData.lastOrNull case final SegmentModel item) {
           onSkip(item, isSeek: false);
-          onRemoveItem(listData.indexOf(item), item);
+          onRemoveItem(listData.length - 1, item);
           return true;
         }
       }

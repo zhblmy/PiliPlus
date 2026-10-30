@@ -51,13 +51,19 @@ class DynamicsController
     tabController = TabController(
       vsync: this,
       length: DynamicsTabType.values.length,
-      initialIndex: Pref.defaultDynamicTypeIndex,
+      // Pref 是持久化的旧值：枚举调整后可能越界，越界时回退第一个 Tab
+      initialIndex: _validIndex(Pref.defaultDynamicTypeIndex),
     );
     queryData();
   }
 
+  static int _validIndex(int index) =>
+      index >= 0 && index < DynamicsTabType.values.length ? index : 0;
+
   void _jumpToTab(int mid) {
-    tabController.index = mid == -1 ? 0 : 4;
+    tabController.index = mid == -1
+        ? DynamicsTabType.all.index
+        : DynamicsTabType.up.index;
   }
 
   void onSelectUp(int mid) {

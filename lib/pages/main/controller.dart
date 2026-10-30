@@ -400,6 +400,7 @@ class MainController extends GetxController
   void setSearchBar() {
     if (hasHome) {
       homeController.showTopBar?.value = true;
+      homeController.requestShowTopBar();
     }
   }
 

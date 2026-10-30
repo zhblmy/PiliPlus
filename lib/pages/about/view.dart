@@ -215,8 +215,9 @@ Commit Hash: ${BuildConfig.commitHash}''',
                     try {
                       await CacheManager.clearLibraryCache();
                       SmartDialog.showToast('清除成功');
-                    } catch (err) {
-                      SmartDialog.showToast(err.toString());
+                    } catch (err, stack) {
+                      SmartDialog.showToast('清除失败，请稍后重试');
+                      Utils.reportError(err, stack);
                     } finally {
                       SmartDialog.dismiss();
                     }

@@ -47,23 +47,30 @@ abstract final class CacheManager {
     );
   }
 
-  // 清除 Library/Caches 目录及文件缓存
+  /// 清除 Library/Caches 目录及文件缓存
+  ///
+  /// 单个条目删不掉时不中断其余条目的删除，最后抛出第一个错误，
+  /// 让调用方能把"清除失败"和"清除成功"分开提示。
   @pragma('vm:notify-debugger-on-exception')
   static Future<void> clearLibraryCache() async {
-    try {
-      await manager.emptyCache();
-      if (PlatformUtils.isDesktop) return;
+    await manager.emptyCache();
+    if (PlatformUtils.isDesktop) return;
 
-      final tempDirectory = await getTemporaryDirectory();
-      if (tempDirectory.existsSync()) {
-        await for (final file in tempDirectory.list(recursive: false)) {
-          if (file is Directory && path.equals(file.path, manager.cacheDir)) {
-            continue;
-          }
-          await file.delete(recursive: true);
-        }
+    final tempDirectory = await getTemporaryDirectory();
+    if (!tempDirectory.existsSync()) return;
+
+    (Object, StackTrace)? failure;
+    await for (final file in tempDirectory.list(recursive: false)) {
+      if (file is Directory && path.equals(file.path, manager.cacheDir)) {
+        continue;
       }
-    } catch (_) {}
+      try {
+        await file.delete(recursive: true);
+      } catch (e, s) {
+        failure ??= (e, s);
+      }
+    }
+    if (failure != null) Error.throwWithStackTrace(failure.$1, failure.$2);
   }
 }
 
