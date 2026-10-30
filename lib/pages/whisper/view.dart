@@ -1,17 +1,17 @@
 import 'package:PiliPlus/common/skeleton/whisper_item.dart';
 import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
+import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart';
 import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/pages/contact/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/pages/whisper/widgets/item.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
-import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/extension/three_dot_ext.dart';
-import 'package:PiliPlus/utils/theme_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -66,16 +66,16 @@ class _WhisperPageState extends State<WhisperPage>
     final padding = MediaQuery.viewPaddingOf(context);
     return SimpleScaffold(
       appBar: AppBar(
+        // 与首页顶栏收起搜索行后剩下的分类栏同高（状态栏内边距由 AppBar 自己补）
+        toolbarHeight: Style.tabBarHeight,
+        // 全局 AppBarTheme 的 titleSpacing 是 0，标题会贴着左边缘，往右让一点
+        titleSpacing: 16,
         title: const Text('消息'),
         actions: [
           IconButton(
-            tooltip: '新增粉丝',
-            onPressed: () => Get.toNamed(
-              '/webview',
-              parameters: {
-                'url':
-                    'https://www.bilibili.com/h5/follow/newFans?navhide=1&${ThemeUtils.themeUrl(theme.isDark)}',
-              },
+            tooltip: '我的好友',
+            onPressed: () => Get.to(
+              const ContactPage(isFromSelect: false, title: '我的好友'),
             ),
             icon: const Icon(Icons.account_circle_outlined),
           ),

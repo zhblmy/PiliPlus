@@ -1,5 +1,6 @@
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/common/style.dart';
+import 'package:PiliPlus/common/widgets/keep_alive_wrapper.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
 import 'package:PiliPlus/pages/fan/view.dart';
 import 'package:PiliPlus/pages/follow/child/child_view.dart';
@@ -10,9 +11,12 @@ import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
 class ContactPage extends StatefulWidget {
-  const ContactPage({super.key, this.isFromSelect = true});
+  const ContactPage({super.key, this.isFromSelect = true, this.title});
 
   final bool isFromSelect;
+
+  /// 页面标题，默认「通讯录」；从消息页「我的好友」入口进来时传「我的好友」
+  final String? title;
 
   @override
   State<ContactPage> createState() => _ContactPageState();
@@ -43,7 +47,7 @@ class _ContactPageState extends State<ContactPage>
   Widget build(BuildContext context) {
     return SimpleScaffold(
       appBar: AppBar(
-        title: const Text('通讯录'),
+        title: Text(widget.title ?? '通讯录'),
         actions: [
           IconButton(
             onPressed: () async {
@@ -80,14 +84,19 @@ class _ContactPageState extends State<ContactPage>
           Expanded(
             child: tabBarView(
               controller: _controller,
+              // 两个 Tab 都保活：否则切一次就销毁重建，控制器重新请求、列表闪回骨架
               children: [
-                FollowChildPage(
-                  mid: mid,
-                  onSelect: widget.isFromSelect ? onSelect : null,
+                KeepAliveWrapper(
+                  child: FollowChildPage(
+                    mid: mid,
+                    onSelect: widget.isFromSelect ? onSelect : null,
+                  ),
                 ),
-                FansPage(
-                  showName: false,
-                  onSelect: widget.isFromSelect ? onSelect : null,
+                KeepAliveWrapper(
+                  child: FansPage(
+                    showName: false,
+                    onSelect: widget.isFromSelect ? onSelect : null,
+                  ),
                 ),
               ],
             ),
