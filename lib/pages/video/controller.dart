@@ -664,8 +664,13 @@ class VideoDetailController extends GetxController
     final currentCodes = currentDecodeFormats.codes;
     VideoItem? bestVideo;
     int bestIndex = preferCodecs.length;
+    // 用户没指定解码格式时，跟随实际码流的编码（不能只看第一条：它的 codecs
+    // 可能是 null 或者是个认不出的新格式）
+    VideoDecodeFormatType? parsed;
     for (final video in videoList) {
-      final c = video.codecs!;
+      final c = video.codecs;
+      if (c == null || c.isEmpty) continue;
+      parsed ??= VideoDecodeFormatType.tryParse(c);
       if (currentCodes.any(c.startsWith)) {
         return video;
       }
@@ -682,9 +687,7 @@ class VideoDetailController extends GetxController
       if (bestIndex < preferCodecs.length) {
         currentDecodeFormats = preferCodecs[bestIndex];
       } else {
-        currentDecodeFormats = VideoDecodeFormatType.fromString(
-          videoList.first.codecs!,
-        );
+        currentDecodeFormats = parsed ?? VideoDecodeFormatType.AVC;
       }
     }
 
@@ -986,27 +989,46 @@ class VideoDetailController extends GetxController
       currentVideoQa.value = VideoQuality.fromCode(targetVideoQa);
 
       /// 优先顺序 设置中指定解码格式 -> 当前可选的首个解码格式
-      final supportFormats = data.supportFormats!;
+      final supportFormats = data.supportFormats;
 
       // 根据画质选编码格式
-      currentDecodeFormats = VideoUtils.selectCodec(
-        supportFormats
-            .firstWhere(
-              (e) => e.quality == targetVideoQa,
-              orElse: () => supportFormats.first,
-            )
-            .codecs!,
-        preferCodecs,
-      );
+      currentDecodeFormats = supportFormats == null
+          ? (preferCodecs.isNotEmpty
+                ? preferCodecs.first
+                : VideoDecodeFormatType.AVC)
+          : VideoUtils.selectCodec(
+              supportFormats
+                      .firstWhere(
+                        (e) => e.quality == targetVideoQa,
+                        orElse: () => supportFormats.first,
+                      )
+                      .codecs ??
+                  const [],
+              preferCodecs,
+            );
 
       /// 取出符合当前画质的videoList
-      final videosList = data.dash!.video!
-          .where((e) => e.quality.code == targetVideoQa)
-          .toList();
+      final List<VideoItem> videosList =
+          data.dash?.video
+              ?.where((e) => e.quality.code == targetVideoQa)
+              .toList() ??
+          const [];
+      if (videosList.isEmpty) {
+        SmartDialog.showToast('视频资源不存在');
+        _autoPlay.value = false;
+        videoState.value = false;
+        if (plPlayerController.isFullScreen.value) {
+          plPlayerController.triggerFullScreen(status: false);
+        }
+        return;
+      }
 
       /// 取出符合当前解码格式的videoItem
       firstVideo = videosList.firstWhere(
-        (e) => currentDecodeFormats.codes.any(e.codecs!.startsWith),
+        (e) {
+          final c = e.codecs;
+          return c != null && currentDecodeFormats.codes.any(c.startsWith);
+        },
         orElse: () => videosList.first,
       );
       _setVideoHeight();

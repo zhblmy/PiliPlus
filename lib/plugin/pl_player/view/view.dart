@@ -797,11 +797,15 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
             return const SizedBox.shrink();
           }
           final PlayUrlModel videoInfo = videoDetailController.data;
-          if (videoInfo.dash == null) {
+          final videoFormat = videoInfo.supportFormats;
+          final videos = videoInfo.dash?.video;
+          if (videoFormat == null ||
+              videoFormat.isEmpty ||
+              videos == null ||
+              videos.isEmpty) {
             return const SizedBox.shrink();
           }
-          final videoFormat = videoInfo.supportFormats!;
-          final availableQa = videoInfo.dash!.video!.availableVideoQualities;
+          final availableQa = videos.availableVideoQualities;
           return PopupMenuButton<int>(
             tooltip: '画质',
             requestFocus: false,
@@ -2121,7 +2125,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
                     qa = video.quality;
                     return false;
                   },
-                  itemBuilder: (context) => videoInfo.supportFormats!
+                  itemBuilder: (context) => [...?videoInfo.supportFormats]
                       .map(
                         (i) => PopupMenuItem(
                           enabled: ids.contains(i.quality),

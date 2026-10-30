@@ -59,7 +59,11 @@ class PlayUrlModel {
   List<SegmentItemModel>? clipInfoList;
 
   int findAvailableVideoQuality(int preferredQuality) {
-    final curHighestVideoQa = dash!.video!.first.quality.code;
+    final video = dash?.video;
+    // 版权受限 / 试看失败时 dash 里可能没有码流，交给调用方按「无资源」处理，
+    // 不要在这里对空列表取 first
+    if (video == null || video.isEmpty) return preferredQuality;
+    final curHighestVideoQa = video.first.quality.code;
     if (acceptQuality case final qualitys?
         when preferredQuality <= curHighestVideoQa) {
       return qualitys.findClosestTarget((e) => e <= preferredQuality, max);
@@ -76,7 +80,8 @@ class PlayUrlModel {
       final available = video.availableVideoQualities;
       final highest = video.first.id;
 
-      for (final item in supportFormats!) {
+      // support_formats 缺失时这里没有可补的画质；不抛异常，直接跳过
+      for (final item in supportFormats ?? const <FormatItem>[]) {
         final quality = item.quality;
         if (quality != null &&
             best < quality &&

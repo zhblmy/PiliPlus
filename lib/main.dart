@@ -293,36 +293,66 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   static ColorScheme? _light, _dark;
+  static ThemeData? _cachedLightTheme, _cachedDarkTheme;
+  static Object? _themeCacheKey;
 
   static (ThemeData, ThemeData) getAllTheme() {
     final dynamicColor = _light != null && _dark != null && Pref.dynamicColor;
+    final customColor = Pref.customColor;
+    final variant = Pref.schemeVariant;
+    // getThemeData 还会读字体粗细 / 字体 / 纯黑主题，这三项改了也必须重算
+    final fontWeight = Pref.appFontWeight;
+    final fontFamily = FontUtils.fontFamily;
+    final isPureBlack = Pref.isPureBlackTheme;
+
+    // 主题重建代价不低（flex_seed_scheme 要生成整套调色板），而 build 会被
+    // 各种无关的重建带着跑；配色没变就直接复用上次的结果。
+    final cacheKey = (
+      dynamicColor,
+      dynamicColor ? -1 : customColor,
+      variant,
+      dynamicColor ? _light!.primary.toARGB32() : 0,
+      dynamicColor ? _dark!.primary.toARGB32() : 0,
+      fontWeight,
+      fontFamily,
+      isPureBlack,
+    );
+    if (_themeCacheKey == cacheKey &&
+        _cachedLightTheme != null &&
+        _cachedDarkTheme != null) {
+      return (
+        ThemeUtils.lightTheme = _cachedLightTheme!,
+        ThemeUtils.darkTheme = _cachedDarkTheme!,
+      );
+    }
 
     final ColorScheme lightScheme, darkScheme;
     if (dynamicColor) {
       lightScheme = _light!;
       darkScheme = _dark!;
     } else {
-      final customColor = Pref.customColor;
       final brandColor =
           colorThemeTypes.elementAtOrNull(customColor)?.color ??
           Color(customColor);
-      final variant = Pref.schemeVariant;
 
       lightScheme = brandColor.asColorSchemeSeed(variant, .light);
       darkScheme = brandColor.asColorSchemeSeed(variant, .dark);
     }
 
-    return (
-      ThemeUtils.lightTheme = ThemeUtils.getThemeData(
-        colorScheme: lightScheme,
-        isDynamic: dynamicColor,
-      ),
-      ThemeUtils.darkTheme = ThemeUtils.getThemeData(
-        isDark: true,
-        colorScheme: darkScheme,
-        isDynamic: dynamicColor,
-      ),
+    final light = ThemeUtils.lightTheme = ThemeUtils.getThemeData(
+      colorScheme: lightScheme,
+      isDynamic: dynamicColor,
     );
+    final dark = ThemeUtils.darkTheme = ThemeUtils.getThemeData(
+      isDark: true,
+      colorScheme: darkScheme,
+      isDynamic: dynamicColor,
+    );
+
+    _themeCacheKey = cacheKey;
+    _cachedLightTheme = light;
+    _cachedDarkTheme = dark;
+    return (light, dark);
   }
 
   @override

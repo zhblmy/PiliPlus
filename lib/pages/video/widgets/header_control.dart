@@ -961,15 +961,19 @@ class HeaderControlState extends State<HeaderControl>
 
   /// 选择画质
   void showSetVideoQa() {
-    if (videoInfo.dash == null) {
+    final videoFormat = videoInfo.supportFormats;
+    final videos = videoInfo.dash?.video;
+    if (videoFormat == null ||
+        videoFormat.isEmpty ||
+        videos == null ||
+        videos.isEmpty) {
       SmartDialog.showToast('当前视频不支持选择画质');
       return;
     }
     final VideoQuality? currentVideoQa = videoDetailCtr.currentVideoQa.value;
     if (currentVideoQa == null) return;
 
-    final List<FormatItem> videoFormat = videoInfo.supportFormats!;
-    final availableQa = videoInfo.dash!.video!.availableVideoQualities;
+    final availableQa = videos.availableVideoQualities;
 
     showBottomSheet(
       (context, setState) {
@@ -1119,10 +1123,10 @@ class HeaderControlState extends State<HeaderControl>
                         horizontal: 20,
                       ),
                       title: Text(item.quality),
-                      subtitle: Text(
-                        item.codecs!,
-                        style: subTitleStyle,
-                      ),
+                      subtitle: switch (item.codecs) {
+                        final codecs? => Text(codecs, style: subTitleStyle),
+                        _ => null,
+                      },
                       trailing: isCurr
                           ? Icon(
                               Icons.done,
@@ -1144,10 +1148,18 @@ class HeaderControlState extends State<HeaderControl>
   void showSetDecodeFormats() {
     final firstCode = videoDetailCtr.firstVideo.quality.code;
     // 当前视频可用的解码格式
-    final videoFormat = videoInfo.supportFormats!;
+    final videoFormat = videoInfo.supportFormats;
 
-    final list = videoFormat.firstWhere((e) => e.quality == firstCode).codecs;
-    if (list == null) {
+    // 认不出的编码串不展示（否则选中后会走到和实际码流不匹配的格式）
+    final formats = videoFormat
+        ?.where((e) => e.quality == firstCode)
+        .toList(growable: false);
+    final list = formats == null || formats.isEmpty
+        ? null
+        : formats.first.codecs
+              ?.where((e) => VideoDecodeFormatType.tryParse(e) != null)
+              .toList(growable: false);
+    if (list == null || list.isEmpty) {
       SmartDialog.showToast('当前视频不支持选择解码格式');
       return;
     }

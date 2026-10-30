@@ -50,15 +50,16 @@ abstract final class DownloadHttp {
         );
 
         /// 优先顺序 设置中指定解码格式 -> 当前可选的首个解码格式
-        final supportFormats = response.supportFormats!;
+        final supportFormats = response.supportFormats;
         // 根据画质选编码格式
-        final targetSupportFormats = supportFormats.firstWhere(
-          (e) => e.quality == targetVideoQa,
-          orElse: () => supportFormats.first,
-        );
+        final targetSupportFormats =
+            supportFormats?.firstWhereOrNull(
+              (e) => e.quality == targetVideoQa,
+            ) ??
+            supportFormats?.firstOrNull;
 
         final currentDecodeFormats = VideoUtils.selectCodec(
-          targetSupportFormats.codecs!,
+          targetSupportFormats?.codecs ?? const [],
           Pref.preferCodecs,
         );
 
@@ -67,7 +68,7 @@ abstract final class DownloadHttp {
           ..videoQuality = targetVideoQa
           ..preferedVideoQuality = targetVideoQa
           ..qualityPithyDescription =
-              targetSupportFormats.newDesc ??
+              targetSupportFormats?.newDesc ??
               VideoQuality.fromCode(targetVideoQa).desc;
 
         /// 取出符合当前画质的videoList
@@ -77,7 +78,10 @@ abstract final class DownloadHttp {
 
         /// 取出符合当前解码格式的videoItem
         final videoDash = videosList.firstWhere(
-          (e) => currentDecodeFormats.codes.any(e.codecs!.startsWith),
+          (e) {
+            final c = e.codecs;
+            return c != null && currentDecodeFormats.codes.any(c.startsWith);
+          },
           orElse: () => videosList.first,
         );
 

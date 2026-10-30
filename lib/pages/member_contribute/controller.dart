@@ -22,9 +22,11 @@ class MemberContributeCtr extends GetxController
   @override
   void onInit() {
     super.onInit();
-    SpaceTab2 contribute = _ctr.tab2!.firstWhere(
-      (item) => item.param == 'contribute',
-    );
+    final tab2 = _ctr.tab2;
+    if (tab2 == null) return;
+    final index = tab2.indexWhere((item) => item.param == 'contribute');
+    if (index == -1) return;
+    final contribute = tab2[index];
     final items = contribute.items;
     if (items != null && items.isNotEmpty) {
       this.items = items;

@@ -99,6 +99,12 @@ abstract final class VideoUtils {
     Iterable<String> codecs,
     List<VideoDecodeFormatType> preferCodecs,
   ) {
+    // 没有 codecs 信息时无法判断，优先按用户指定格式走
+    if (codecs.isEmpty) {
+      return preferCodecs.isNotEmpty
+          ? preferCodecs.first
+          : VideoDecodeFormatType.AVC;
+    }
     if (preferCodecs.isNotEmpty) {
       int bestIndex = preferCodecs.length;
       for (final e in codecs) {

@@ -48,6 +48,27 @@ on:
                 type: string
 
 jobs:
+    # 静态检查：不参与产物构建，但能在跑 30 分钟的 APK 之前先暴露编译级错误
+    analyze:
+        name: Analyze
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: 代码迁出
+              uses: actions/checkout@v7
+
+            - name: 安装Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                  channel: stable
+                  flutter-version-file: pubspec.yaml
+                  cache: true
+
+            - name: Flutter Analyze
+              # 39 条 info 全部来自 vendored 的 Flutter widget 副本（上游已弃用的 API），
+              # 不该挡住发布；但 error / warning 必须挡。
+              run: flutter analyze --no-fatal-infos
+
     android:
         if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_android == 'true' }}
         name: Release Android

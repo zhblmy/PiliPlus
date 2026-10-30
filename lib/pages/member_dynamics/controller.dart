@@ -73,7 +73,15 @@ class MemberDynamicsController
         loadingState.refresh();
         SmartDialog.showToast('取消置顶成功');
       } else {
-        final item = list.firstWhere((item) => item.idStr == dynamicId);
+        final index = list.indexWhere((item) => item.idStr == dynamicId);
+        if (index == -1) {
+          // 列表被刷新/翻页替换过，本地已经找不到这条：置顶已在服务端生效，
+          // 直接重拉一次，避免本地顺序和服务器脱节
+          SmartDialog.showToast('置顶成功');
+          onReload();
+          return;
+        }
+        final item = list[index];
         item.modules
           ..moduleTag = ModuleTag(text: '置顶')
           ..moduleAuthor?.isTop = true;

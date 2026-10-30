@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate' show Isolate;
 
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/constants.dart';
@@ -145,13 +146,20 @@ class Request {
       enableSystemProxy = false;
     }
 
+    /// 放行自签证书必须是用户显式打开的开关，不能因为「开了系统代理」就无条件信任
+    /// 任何证书（抓包代理会变成中间人）。
+    /// 与下方 [ConnectionManager] 的 `onBadCertificate` 保持同一判断。
+    final allowBadCertificate = Pref.badCertificateCallback;
+
     final http11Adapter = IOHttpClientAdapter(
       createHttpClient: enableSystemProxy
           ? () => HttpClient()
               ..idleTimeout = const Duration(seconds: 15)
               ..autoUncompress = false
               ..findProxy = ((_) => 'PROXY $systemProxyHost:$systemProxyPort')
-              ..badCertificateCallback = (cert, host, port) => true
+              ..badCertificateCallback = allowBadCertificate
+                  ? (cert, host, port) => true
+                  : null
           : () => HttpClient()
               ..idleTimeout = const Duration(seconds: 15)
               ..autoUncompress = false, // Http2Adapter没有自动解压, 统一行为
@@ -167,8 +175,10 @@ class Request {
                       host: systemProxyHost,
                       port: systemProxyPort,
                     )
-                    ..onBadCertificate = (_) => true
-                : Pref.badCertificateCallback
+                    ..onBadCertificate = allowBadCertificate
+                        ? (_) => true
+                        : null
+                : allowBadCertificate
                 ? (_, config) => config.onBadCertificate = (_) => true
                 : null,
           )
@@ -366,6 +376,10 @@ class Request {
     }
   }
 
+  /// 小于这个体积（压缩后）就直接在主 isolate 上解压：为几十字节的响应 spawn
+  /// 一个 isolate 反而更慢。
+  static const int _decodeIsolateThreshold = 32 << 10;
+
   static List<int> responseBytesDecoder(
     List<int> responseBytes,
     Map<String, List<String>> headers,
@@ -375,12 +389,26 @@ class Request {
     _ => responseBytes,
   };
 
-  static String _responseDecoder(
+  /// 解压 + utf8 解码。`brotli` / `archive` 都是纯 Dart 实现，几百 KB 的响应在
+  /// 主 isolate 上要几十毫秒（正好压在开页那一帧上），所以大包丢给子 isolate。
+  /// dio 的 `responseDecoder` 允许返回 Future。
+  static Future<String> _responseDecoder(
     List<int> responseBytes,
     RequestOptions options,
     ResponseBody responseBody,
+  ) {
+    final headers = responseBody.headers;
+    if (responseBytes.length < _decodeIsolateThreshold) {
+      return Future.value(_decodeBody(responseBytes, headers));
+    }
+    return Isolate.run(() => _decodeBody(responseBytes, headers));
+  }
+
+  static String _decodeBody(
+    List<int> bytes,
+    Map<String, List<String>> headers,
   ) => utf8.decode(
-    responseBytesDecoder(responseBytes, responseBody.headers),
+    responseBytesDecoder(bytes, headers),
     allowMalformed: true,
   );
 }

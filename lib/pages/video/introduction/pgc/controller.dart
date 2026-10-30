@@ -462,7 +462,9 @@ class PgcIntroController extends CommonIntroController {
 
   @override
   void queryVideoIntro([EpisodeItem? episode]) {
-    episode ??= pgcItem.episodes!.firstWhere((e) => e.cid == cid.value);
+    // 找不到对应分集时（换季 / cid 对不上）不要强解包，保持当前简介即可
+    episode ??= pgcItem.episodes?.firstWhereOrNull((e) => e.cid == cid.value);
+    if (episode == null) return;
     videoDetail
       ..value.title = episode.showTitle
       ..refresh();
