@@ -9,6 +9,7 @@ import 'package:PiliPlus/common/widgets/video_card/video_card_v.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/rcmd/controller.dart';
 import 'package:PiliPlus/utils/grid.dart';
+import 'package:PiliPlus/utils/memory_budget.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -26,6 +27,15 @@ class _RcmdPageState extends State<RcmdPage>
 
   @override
   bool get wantKeepAlive => true;
+
+  /// 列表预取量（逻辑像素）。
+  ///
+  /// 一行约 98（卡片 90 + 间距 8），1200 等于视口上下各预建近 12 行、
+  /// 两列约 48 张缩略图；这部分解码与图片缓存开销在低端机上会直接顶到
+  /// 64 MiB 的图片缓存预算，所以低内存档位（或已出现过内存压力）减半到 600，
+  /// 仍保留上下各约 6 行的提前量。
+  static double get _cacheExtent =>
+      MemoryBudget.isLowMemory || MemoryBudget.isUnderPressure ? 600 : 1200;
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +56,9 @@ class _RcmdPageState extends State<RcmdPage>
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
             ),
-            // 预渲染约一屏：避免新的一行刚进视口才开始构建/取图造成的掉帧
-            cacheExtent: 1200,
+            // 预渲染约一屏：避免新的一行刚进视口才开始构建/取图造成的掉帧。
+            // 但它是「上下各」预建，低内存设备上要按预算减半（见 [_cacheExtent]）。
+            cacheExtent: _cacheExtent,
             slivers: [
               // 为首页的液体玻璃顶栏让出空间
               const TopBarInsetSpacer(),

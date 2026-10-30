@@ -503,6 +503,8 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
     }
 
     final size = MediaQuery.sizeOf(context);
+    // 首次进入时 maxWidth/maxHeight 还是初值，天然算作「尺寸变了」
+    final bool sizeChanged = size.width != maxWidth || size.height != maxHeight;
     maxWidth = size.width;
     maxHeight = size.height;
     isWindowMode = MaxScreenSize.isWindowMode(
@@ -518,10 +520,13 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
       ..isPortrait = isPortrait = maxHeight >= maxWidth
       ..minVideoHeight = minVideoHeight
       ..maxVideoHeight = maxVideoHeight;
-    // 展开/收起动画进行中（键盘、旋转、主题等引起的依赖变化）不能重置视频高度，
-    // 否则 _calcAnimHeight 会按错误的起点/终点算，动画直接跳变
-    if (!videoDetailController.isExpanding &&
-        !videoDetailController.isCollapsing) {
+    // 展开/收起动画进行中不重置视频高度：_calcAnimHeight 把它当动画端点，
+    // 中途改掉会让动画跳变。但这条回调也会被主题 / 键盘等「尺寸没变」的依赖
+    // 变化触发，真正改了尺寸（旋转、分屏、桌面缩放）时必须跟着更新，
+    // 否则动画结束后会用旧尺寸的静止高度。
+    if (sizeChanged ||
+        (!videoDetailController.isExpanding &&
+            !videoDetailController.isCollapsing)) {
       videoDetailController.videoHeight = videoDetailController.isVertical.value
           ? maxVideoHeight
           : minVideoHeight;
@@ -1301,8 +1306,9 @@ class _VideoDetailPageVState extends State<VideoDetailPageV>
   late ThemeData theme;
   ColorScheme get colorScheme => theme.colorScheme;
   late bool isPortrait;
-  late double maxWidth;
-  late double maxHeight;
+  // 初值为 0：首帧 didChangeDependencies 一定会算成「尺寸变了」，无需 late 兜底
+  double maxWidth = 0;
+  double maxHeight = 0;
   bool isWindowMode = false;
   late EdgeInsets padding;
 

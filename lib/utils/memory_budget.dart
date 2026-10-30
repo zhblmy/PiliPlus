@@ -2,7 +2,8 @@ import 'dart:io' show Platform;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/painting.dart' show PaintingBinding;
-import 'package:flutter/widgets.dart' show WidgetsBinding, WidgetsBindingObserver;
+import 'package:flutter/widgets.dart'
+    show WidgetsBinding, WidgetsBindingObserver;
 
 /// Android 17 起系统会按设备物理内存给应用设内存上限（MemLimiter），超限时进程
 /// 会被直接回收，`ApplicationExitInfo` 里表现为 `REASON_OTHER` +
@@ -55,10 +56,14 @@ abstract final class MemoryBudget {
     WidgetsBinding.instance.addObserver(_MemoryPressureObserver());
   }
 
+  /// 低内存档位：系统报告的低内存设备，或物理内存不足 4 GiB（内存未知时为 false）
+  static bool get isLowMemory =>
+      _lowRam || (_totalRamMb > 0 && _totalRamMb < 4096);
+
   /// 图片内存缓存预算（字节）
   static int get imageCacheBytes {
     if (!_ready || _totalRamMb <= 0) return 128 << 20;
-    if (_lowRam || _totalRamMb < 4096) return 64 << 20;
+    if (isLowMemory) return 64 << 20;
     if (_totalRamMb >= 8192) return 192 << 20;
     return 128 << 20;
   }
@@ -72,7 +77,7 @@ abstract final class MemoryBudget {
     if (!_ready) return 1.0;
     // 出现过内存压力后本进程保持保守（见 [onMemoryPressure]）
     if (_pressure) return 0.5;
-    return _lowRam || (_totalRamMb > 0 && _totalRamMb < 4096) ? 0.5 : 1.0;
+    return isLowMemory ? 0.5 : 1.0;
   }
 
   /// 系统内存压力（Flutter 侧 `didHaveMemoryPressure`）—— MI-16。

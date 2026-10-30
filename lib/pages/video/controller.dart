@@ -845,12 +845,20 @@ class VideoDetailController extends GetxController
     );
   }
 
-  Future<void> _supplementVideoQualities() async {
-    final quality = data.missingVideoQualityBelowHighest;
+  /// 补齐主请求里缺失的中间画质（只影响「画质列表」是否完整）。
+  ///
+  /// 起播本身不依赖它，所以调用方可以不等它完成就先起播（见 [_queryVideoUrl]），
+  /// 避免每次起播都白白多等一个 RTT。失败也不影响播放，故只记 debug 日志。
+  Future<void> _supplementVideoQualities(PlayUrlModel playUrl) async {
+    final quality = playUrl.missingVideoQualityBelowHighest;
     if (quality == -1) return;
-    final result = await _getVideoUrl(quality);
-    if (result case Success(:final response)) {
-      data.dash!.video!.merge(response.dash?.video);
+    try {
+      final result = await _getVideoUrl(quality);
+      if (result case Success(:final response)) {
+        playUrl.dash?.video?.merge(response.dash?.video);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('supplement video qualities failed: $e');
     }
   }
 
@@ -897,7 +905,12 @@ class VideoDetailController extends GetxController
 
     if (result case Success(:final response)) {
       data = response;
-      if (data.dash != null) await _supplementVideoQualities();
+      // 补齐画质要再发一次请求，但起播不依赖它：先发出去，让这次请求与后面的
+      // 选流 / 播放器初始化并行，等本地起播完成后再收结果（末尾 await），
+      // 免得每次起播都白等一个 RTT。
+      final supplement = data.dash != null
+          ? _supplementVideoQualities(data)
+          : null;
 
       languages.value = data.language?.items;
       currLang.value = data.curLanguage;
@@ -1024,6 +1037,13 @@ class VideoDetailController extends GetxController
         currentAudioQa = null;
       }
       await initPlayerIfNeeded(autoFullScreenFlag);
+      // 起播已经在 initPlayerIfNeeded 里发起，这里只是把并行的补画质请求收尾，
+      // 让本函数返回时画质列表通常已经完整（打开画质面板不会少项）。
+      // 但不能无限期等：isQuerying 要到 queryVideoUrl 的 finally 才复位，
+      // 慢网络下被它卡住会把后续的切换请求静默丢掉（超时后它仍会自己 merge 回来）。
+      if (supplement != null) {
+        await supplement.timeout(const Duration(seconds: 2), onTimeout: () {});
+      }
     } else {
       _autoPlay.value = false;
       videoState.value = false;
