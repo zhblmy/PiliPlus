@@ -30,39 +30,19 @@ class _RcmdPageState extends State<RcmdPage>
 
   /// 列表预取量（逻辑像素）。
   ///
-  /// 一行约 98（卡片 90 + 间距 8），1200 等于视口上下各预建近 12 行、
-  /// 两列约 48 张缩略图；这部分解码与图片缓存开销在低端机上会直接顶到
-  /// 64 MiB 的图片缓存预算，所以低内存档位（或已出现过内存压力）减半到 600，
-  /// 仍保留上下各约 6 行的提前量。
-  static double get _cacheExtent =>
-      MemoryBudget.isLowMemory || MemoryBudget.isUnderPressure ? 600 : 1200;
-
-  /// 触底加载阈值（逻辑像素）：滚动结束时离末尾这么近就请求下一页。
-  static const double _loadMoreExtent = 400;
-
-  /// 监听列表内容变化：骨架 → 首屏、追加一页之后补一次「是否填满视口」的检查。
+  /// 它同时是「什么时候把末条 build 出来、从而续拉下一页」的触发距离，所以取值
+  /// 决定了两件事：首帧连锁拉几页、以及划动时提前多远开始请求下一页。
   ///
-  /// 放在监听里而不是 build 里：build 会被主题 / 键盘 / 旋转等无关重建带着跑，
-  /// 在里面挂 post-frame 会把分页触发绑定到「渲染时机」上（首页顶栏那个
-  /// 「在 build 里检查并触发」的旧写法就是这么出的问题，见 home/view.dart）。
-  Worker? _loadingStateWorker;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadingStateWorker = ever(
-      controller.loadingState,
-      (_) => WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _ensureFilled(),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _loadingStateWorker?.dispose();
-    super.dispose();
-  }
+  /// 一行约 98（卡片 90 + 间距 8），APP 端推荐每页 10 条（约 5 行 490dp）。
+  /// 取 700（约一屏）是按这两个数算过的折中：
+  /// - 首帧连锁到第 3 页就停（30 条、约 2.3 屏内容，预建卡片约 28 张）；
+  ///   原值 1200 会预建到第 4 页（约 38 张），冷启动时几十张缩略图一起抢带宽，
+  ///   是首页首次加载慢的原因之一；
+  /// - 同时留出约一屏的提前量，下一页在划到底之前就发出，不会出现
+  ///   「划一下就到底、还得干等加载」。
+  /// 低内存档位（或已出现过内存压力）再减半到 350（首帧仍是 3 页，提前量减半）。
+  static double get _cacheExtent =>
+      MemoryBudget.isLowMemory || MemoryBudget.isUnderPressure ? 350 : 700;
 
   @override
   Widget build(BuildContext context) {
@@ -75,81 +55,32 @@ class _RcmdPageState extends State<RcmdPage>
       child: refreshIndicator(
         onRefresh: controller.onRefresh,
         // BouncingScrollPhysics 自己就会“弹”，别再叠加 Android 的拉伸指示器
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _onScrollNotification,
-          child: ScrollConfiguration(
-            behavior: const NoOverscrollIndicator(),
-            child: CustomScrollView(
-              controller: controller.scrollController,
-              // iOS/小米那种带阻尼的回弹与惯性，比 Android 默认的“夹紧 + 拉伸”更顺滑跟手
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              // 预渲染约一屏：避免新的一行刚进视口才开始构建/取图造成的掉帧。
-              // 但它是「上下各」预建，低内存设备上要按预算减半（见 [_cacheExtent]）。
-              cacheExtent: _cacheExtent,
-              slivers: [
-                // 为首页的液体玻璃顶栏让出空间
-                const TopBarInsetSpacer(),
-                SliverPadding(
-                  padding: const .only(top: Style.cardSpace, bottom: 100),
-                  sliver: Obx(
-                    () => _buildBody(
-                      colorScheme,
-                      controller.loadingState.value,
-                    ),
+        child: ScrollConfiguration(
+          behavior: const NoOverscrollIndicator(),
+          child: CustomScrollView(
+            controller: controller.scrollController,
+            // iOS/小米那种带阻尼的回弹与惯性，比 Android 默认的“夹紧 + 拉伸”更顺滑跟手
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            cacheExtent: _cacheExtent,
+            slivers: [
+              // 为首页的液体玻璃顶栏让出空间
+              const TopBarInsetSpacer(),
+              SliverPadding(
+                padding: const .only(top: Style.cardSpace, bottom: 100),
+                sliver: Obx(
+                  () => _buildBody(
+                    colorScheme,
+                    controller.loadingState.value,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  /// 分页触发：只在一次滚动结束时判定。
-  ///
-  /// 不再用「列表项 build 到末条就 loadMore」——`cacheExtent` 会把视口外一屏多的
-  /// 列表项也 build 出来，而 APP 端推荐每页只有 10 条（约 5 行 490dp），
-  /// 首帧就会沿着「末条 build → 追加一页 → 新末条仍在 cacheExtent 内」链式连发
-  /// 5~7 个分页请求，冷启动时和首屏图片抢带宽/连接。
-  ///
-  /// 也不按每帧的滚动更新判定：那样一次请求返回空页（或整页都被过滤器拦掉）时，
-  /// 只要手指还压在屏幕底部，就会「一返回就再发一次」，变成连续刷接口。
-  bool _onScrollNotification(ScrollNotification notification) {
-    if (notification is! ScrollEndNotification) return false;
-    final metrics = notification.metrics;
-    // 必须在顶部之外：本监听器是 RefreshIndicator 的后代，同一条 ScrollEndNotification
-    // 我们先收到。列表不足一屏时 `extentAfter` 恒 < 阈值，若在顶部下拉刷新也判定，
-    // 就会抢在 RefreshIndicator 调 onRefresh 之前先发一个 loadMore（isLoading 被占住），
-    // 把下拉刷新吞掉。BouncingScrollPhysics 下顶部下拉时 pixels 恒 <= 0。
-    if (metrics.pixels > 0 &&
-        metrics.axis == .vertical &&
-        metrics.extentAfter < _loadMoreExtent &&
-        _canLoadMore) {
-      controller.onLoadMore();
-    }
-    return false;
-  }
-
-  /// 内容还不满一屏（没得滚）时主动补一页
-  void _ensureFilled() {
-    if (!mounted || !_canLoadMore) return;
-    final positions = controller.scrollController.positions;
-    // 同一控制器可能短暂挂到多个视图上（Tab 切换期），拿不准就跳过
-    if (positions.length != 1) return;
-    final position = positions.first;
-    // 还没布局过就没有内容尺寸，`maxScrollExtent` 会直接抛空断言
-    if (!position.hasContentDimensions || position.maxScrollExtent > 0) return;
-    controller.onLoadMore();
-  }
-
-  /// 只有已经拿到内容、且没有请求在飞时才允许续拉：
-  /// Loading / Error / 空列表都在这里挡掉，失败不会被放大成重试风暴
-  bool get _canLoadMore {
-    final data = controller.loadingState.value.dataOrNull;
-    return data != null && data.isNotEmpty && !controller.isLoading;
   }
 
   late final gridDelegate = SliverGridDelegateWithExtentAndRatio(
@@ -171,6 +102,13 @@ class _RcmdPageState extends State<RcmdPage>
             ? SliverGrid.builder(
                 gridDelegate: gridDelegate,
                 itemBuilder: (context, index) {
+                  // 末条被 build 出来（≈ 滚到离底部 [_cacheExtent] 以内）就续拉下一页，
+                  // 请求在用户划到底之前发出。首帧内容不满预取范围时会连锁补到第 3 页
+                  // 为止，之后追加的末条就落在范围外，只在继续划动时才再触发；
+                  // 返回空页 / 整页被过滤时列表不变、末条不再重建，也不会反复请求。
+                  if (index == response.length - 1) {
+                    controller.onLoadMore();
+                  }
                   if (controller.lastRefreshAt != null) {
                     if (controller.lastRefreshAt == index) {
                       return GestureDetector(
