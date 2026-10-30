@@ -79,9 +79,6 @@ class MainController extends GetxController
   @override
   void onInit() {
     super.onInit();
-    if (Pref.autoUpdate) {
-      Update.checkUpdate();
-    }
 
     setNavBarConfig();
 
@@ -107,23 +104,32 @@ class MainController extends GetxController
     dynamicBadgeMode = Pref.dynamicBadgeMode;
 
     hasDyn = navigationBars.contains(NavigationBarType.dynamics);
-    if (dynamicBadgeMode != DynamicBadgeMode.hidden) {
-      if (hasDyn && navigationBars[selectedIndex.value] != .dynamics) {
-        if (checkDynamic) {
-          _lastCheckDynamicAt = DateTime.now().millisecondsSinceEpoch;
-        }
-        getUnreadDynamic();
-      }
+    final checkDynBadge =
+        dynamicBadgeMode != DynamicBadgeMode.hidden &&
+        hasDyn &&
+        navigationBars[selectedIndex.value] != .dynamics;
+    if (checkDynBadge && checkDynamic) {
+      _lastCheckDynamicAt = DateTime.now().millisecondsSinceEpoch;
     }
 
     hasHome = navigationBars.contains(NavigationBarType.home);
     hasMsg = navigationBars.contains(NavigationBarType.msg);
-    if (msgBadgeMode != DynamicBadgeMode.hidden) {
-      if (hasHome || hasMsg) {
-        lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
-        queryUnreadMsg();
-      }
+    final checkMsgBadge =
+        msgBadgeMode != DynamicBadgeMode.hidden && (hasHome || hasMsg);
+    if (checkMsgBadge) {
+      lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
     }
+
+    // 冷启动优化：更新检查（GitHub）、动态红点、未读数都是「角标类」请求，
+    // 与首页首屏的推荐请求同一时刻抢冷连接没有收益。推到首帧之后发，
+    // 那时推荐请求已经发出去，角标最多晚一帧刷新。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (Pref.autoUpdate) {
+        Update.checkUpdate();
+      }
+      if (checkDynBadge) getUnreadDynamic();
+      if (checkMsgBadge) queryUnreadMsg();
+    });
   }
 
   Future<int> _msgUnread() async {

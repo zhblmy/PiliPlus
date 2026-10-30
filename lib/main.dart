@@ -137,6 +137,11 @@ void main() async {
     CacheManager.ensureInitialized(),
     // Android 17 应用内存上限适配：按设备内存给图片缓存 / 解码缓冲定预算
     // （非 Android 平台内部直接返回，不读设备信息、不改变原有行为）
+    //
+    // 不能挪到首帧之后：`MemoryBudget.isLowMemory` 会被首页的列表预取量
+    // （rcmd 的 `_cacheExtent`）在**第一次 build** 时读一次，而那次读到的值
+    // 会一直用到这个页面被重建为止；延后初始化会让低内存设备在首屏就用上
+    // 非低内存档的预取量，正好把这个保护抵消掉。代价只有一次 device_info 往返。
     MemoryBudget.init(),
     ?FontUtils.init(),
     coldBoxes, // S-04
