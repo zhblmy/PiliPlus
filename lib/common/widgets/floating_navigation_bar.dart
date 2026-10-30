@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
+
 import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
@@ -11,11 +14,60 @@ const double _kMaxLabelTextScaleFactor = 1.3;
 
 /// 悬浮底栏整体尺寸
 const _kNavigationHeight = 55.0;
-const _kIndicatorHeight = _kNavigationHeight - 2 * _kIndicatorPaddingInt;
 
-/// 每一格的宽度（同时也是选中气泡的宽度；整条宽 = 格数 × 该值）
-const _kIndicatorWidth = 90.0;
+/// 底栏宽度上限。
+///
+/// 手机竖屏时底栏**铺满可用宽度**，这样左右留白严格等于「到屏幕底边的距离」；
+/// 平板 / 横屏用这个上限收住，免得被拉成一条超长胶囊。
+const _kMaxBarWidth = 480.0;
 const _kIndicatorPaddingInt = 4.0;
+
+/// 极窄屏（分屏、折叠屏悬停）的兜底：优先压缩左右留白而不是硬撑格宽，
+/// 否则底栏会比屏幕还宽（直接 overflow）
+const _kMinCellWidth = 56.0;
+
+/// 静止时气泡四周与底栏之间的留白：上下左右必须**一样**，
+/// 气泡两端的圆弧才会和底栏同心（弧度一致）。
+///
+/// 底栏圆角 = 55/2 = 27.5，气泡高 = 55 - 2×5 = 45、圆角 = 22.5，
+/// 差值正好是 5 —— 两条弧就是同心的。
+const _kIndicatorRestInset = 5.0;
+
+/// [ _kIndicatorRestInset] 换算到「图标行矩形」里的值。
+///
+/// 图标行外面还包了一层 [ _kIndicatorPadding]（4），气泡图层画在那一层里，
+/// 所以横向留白要用 `restInset - padding`，才不会变成 4+5=9 而上下只有 5。
+const _kIndicatorInnerInset = _kIndicatorRestInset - _kIndicatorPaddingInt;
+
+/// 静止时气泡的尺寸（比一格略小、比栏略矮）
+const _kIndicatorRestHeight = _kNavigationHeight - 2 * _kIndicatorRestInset;
+
+/// 栏内留白之后的高度：气泡在这个区域里上下居中
+const _kNavigationInnerHeight = _kNavigationHeight - 2 * _kIndicatorPaddingInt;
+
+/// 按下时气泡在横向 / 纵向上额外撑开的尺寸（撑到溢出底栏）。
+/// 整条底栏也会放大 1.05，这里不需要再撑太多，否则气泡会显得头重脚轻
+const _kPressGrow = 20.0;
+
+/// 气泡滑动用的缓动曲线。
+///
+/// Material 的 emphasized 曲线起步几乎瞬时（时间走 10% 就已经滑了 62%），
+/// 看着像“跳过去”，完全看不出缓动。这里是一条「快起步 + 长尾巴」的 S 形：
+/// 10% 时间走 3.4%、20% 走 17%、40% 走 64%、60% 走 88%、80% 走 98%，
+/// 前段推进快（配上下面的短时长才不肉），后段用近四成时间慢慢收力，
+/// 既看得出缓动、又不会像在“刹一脚”。
+const _kSlideCurve = Cubic(0.35, 0.0, 0.20, 1.0);
+
+/// 按下时气泡「滑到被按的那一格」的时长。
+/// 比切换选中略快一点（按下要立刻有反馈），但依旧能看清缓动过程。
+const _kPressSlideDuration = Duration(milliseconds: 240);
+
+/// 底栏玻璃的着色浓度：**越小越透**（下层内容越清楚，糊得也更明显）。
+///
+/// IT之家 那条底栏相当透，所以这里给的比一般 Material 表面低不少；
+/// 想更透就继续往下调，想更实就往 0.4 走。
+const _kBarFillAlphaLight = 0.14;
+const _kBarFillAlphaDark = 0.24;
 
 /// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃。
 ///
@@ -23,8 +75,23 @@ const _kIndicatorPaddingInt = 4.0;
 /// 降到 16 后视觉差异很小，滚动帧时间明显改善。
 const _kBlurSigma = 16.0;
 
-/// 按住气泡时的放大倍数（手指按下 → 放大，抬手 → 缩回）
-const _kPressScale = 1.3;
+/// 选中气泡的模糊强度：它叠在底栏之上再糊一次下层内容，
+/// 比底栏“朦胧”得多才有 IT之家 那种透镜感（区域小，sigma 高一点也不贵）
+const _kIndicatorBlurSigma = 32.0;
+
+/// 气泡边缘的软化程度：IT之家 那颗囊泡是没有硬边框的，
+/// 边缘像糊进底栏里一样虚化
+const _kIndicatorEdgeBlur = 0.9;
+
+/// 气泡内部预留给「边缘软化」的空间（模糊会往外扩，得留出画布）
+const _kIndicatorEdgePadding = _kIndicatorEdgeBlur * 2.6;
+
+/// 按下时整个悬浮底栏的放大倍数（松开回落）
+const _kBarPressScale = 1.05;
+
+/// 左右到屏幕边缘的距离 = 底部距离 × 该比例（1 = 与底部距离相同，
+/// 想让两侧更宽就往大调）
+const _kSideMarginRatio = 1.0;
 
 /// 按下放大 / 抬手缩回的时长
 const _kPressDuration = Duration(milliseconds: 150);
@@ -37,12 +104,15 @@ const _kNavigationShape = RoundedSuperellipseBorder(
   borderRadius: _kBorderRadius,
 );
 
+/// 选中气泡外形：胶囊（椭圆两端），上下溢出底栏
+const _kIndicatorShape = StadiumBorder();
+
 /// ref [NavigationBar]
 class FloatingNavigationBar extends StatefulWidget {
   // ignore: prefer_const_constructors_in_immutables
   FloatingNavigationBar({
     super.key,
-    this.animationDuration = const Duration(milliseconds: 500),
+    this.animationDuration = const Duration(milliseconds: 310),
     this.selectedIndex = 0,
     required this.destinations,
     this.onDestinationSelected,
@@ -51,9 +121,7 @@ class FloatingNavigationBar extends StatefulWidget {
     this.shadowColor,
     this.surfaceTintColor,
     this.indicatorColor,
-    this.indicatorShape,
     this.labelBehavior,
-    this.overlayColor,
     this.labelTextStyle,
     this.labelPadding,
     this.bottomPadding = 8.0,
@@ -68,10 +136,11 @@ class FloatingNavigationBar extends StatefulWidget {
   final double? elevation;
   final Color? shadowColor;
   final Color? surfaceTintColor;
+
+  /// 只用来给选中气泡「染色」；气泡本身由底栏统一绘制（单个气泡跟随滑动），
+  /// 不再像 [NavigationBar] 那样每个 destination 各画一个 indicator。
   final Color? indicatorColor;
-  final ShapeBorder? indicatorShape;
   final NavigationDestinationLabelBehavior? labelBehavior;
-  final WidgetStateProperty<Color?>? overlayColor;
   final WidgetStateProperty<TextStyle?>? labelTextStyle;
   final EdgeInsetsGeometry? labelPadding;
   final double bottomPadding;
@@ -93,17 +162,12 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     duration: _kPressDuration,
   );
 
-  late final Animation<double> _pressScale =
-      Tween<double>(
-        begin: 1.0,
-        end: _kPressScale,
-      ).animate(
-        CurvedAnimation(
-          parent: _pressController,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeOutCubic,
-        ),
-      );
+  /// 按压进度（0..1）
+  late final Animation<double> _pressProgress = CurvedAnimation(
+    parent: _pressController,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeOutCubic,
+  );
 
   /// 气泡滑动的起点 / 终点（单位：第几格）；动画途中再次切换时从当前位置续接
   late double _from = widget.selectedIndex.toDouble();
@@ -117,59 +181,136 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
   double _dragStartDx = 0.0;
   double _dragStartPosition = 0.0;
 
-  /// 气泡当前所在的格（带小数 = 正在拖动 / 滑动）
+  /// 本次按下命中的是第几格（抬手时用来校验气泡和选中态是否一致）
+  int? _pressedCell;
+
+  /// 气泡当前所在的格（带小数 = 正在拖动 / 滑动）。
+  ///
+  /// 位置随时间走的不是直线：[_kSlideCurve] 让它慢起步、后段收力，
+  /// 所以「移动过程」本身就能看出加速与减速。
   double get _position {
     final drag = _dragPosition.value;
     if (drag != null) return drag;
-    return _from +
-        (_to - _from) *
-            Curves.easeInOutCubicEmphasized.transform(_controller.value);
+    return _from + (_to - _from) * _kSlideCurve.transform(_controller.value);
   }
 
   double get _cellWidth =>
-      (widget.destinations.length * _kIndicatorWidth -
-          2 * _kIndicatorPaddingInt) /
+      (widget.destinations.length * _cell - 2 * _kIndicatorPaddingInt) /
       widget.destinations.length;
+
+  /// 每一格的实际宽度（[build] 里按屏幕宽度算好后写回，
+  /// 拖动手势要跟它保持一致）
+  double _cell = 90.0;
+
+  /// 整条底栏当前的放大倍数（按压时 1 → [_kBarPressScale]）。
+  ///
+  /// 必须和视觉缩放用**同一个**值：气泡画在缩放后的坐标系里，
+  /// 手指的位移得除以它才是“气泡走了几格”。取 [_pressProgress]（带缓动）
+  /// 而不是 [_pressController]（线性），底栏的放大才和气泡撑开同一条曲线。
+  double get _barScale => 1 + (_kBarPressScale - 1) * _pressProgress.value;
+
+  /// 从气泡当前位置平滑滑到 [target]（单位：第几格）。
+  ///
+  /// 动画途中再次调用时用 [_position] 续接，所以不会跳变（永远不是硬切）。
+  void _animateTo(double target, {Duration? duration}) {
+    // 已经在去同一格的路上（比如按下时的 [_kPressSlideDuration] 滑入还没走完，
+    // 紧接着 onTap 确认选中）：让它自然走完，不要把时间轴重排成
+    // [animationDuration]，否则会“刹一脚”
+    if (_to == target) return;
+    _from = _position;
+    _to = target;
+    if (_from == _to) return;
+    _controller
+      ..duration = duration ?? widget.animationDuration
+      ..reset()
+      ..forward();
+  }
+
+  /// 手指落点属于第几格（0 起）
+  int _cellAt(double localDx) {
+    final int count = widget.destinations.length;
+    final double offset = localDx - _kIndicatorPaddingInt;
+    return (offset / _cellWidth).floor().clamp(0, count - 1);
+  }
 
   void _onPointerDown(PointerDownEvent event) {
     // 不用 if (_activePointer != null) return：万一上一次按下没收到抬手事件
     // （比如中途被移出树），直接接管，别把气泡交互永久锁死。
     _activePointer = event.pointer;
     _dragStartDx = event.position.dx;
-    _dragStartPosition = _position;
     _pressController.forward();
     // 按压震动反馈（跟随设置 → 其它设置 → 震动反馈）
     feedBack();
+
+    // 按在哪一格，气泡就先滑到那一格（带动画，不硬切）
+    final int cell = _cellAt(event.localPosition.dx);
+    _pressedCell = cell;
+    _animateTo(cell.toDouble(), duration: _kPressSlideDuration);
   }
 
   void _onPointerMove(PointerMoveEvent event) {
     if (event.pointer != _activePointer) return;
     final double dx = event.position.dx - _dragStartDx;
-    if (_dragPosition.value == null && dx.abs() < _kDragSlop) return;
+    if (_dragPosition.value == null) {
+      if (dx.abs() < _kDragSlop) return;
+      // 拖动的基准是「此刻气泡所在的位置」而不是按下的那一格：
+      // 按下时的滑入动画可能还没走完，用格子做基准会看到气泡瞬间跳一段。
+      _dragStartPosition = _position;
+    }
+    // 超过 slop 的那一小段「白走」：扣掉它，激活瞬间不会跳；
+    // 后面的位移 1:1 跟手（不能像以前那样把 _dragStartDx 重置到当前点，
+    // 那样一次大跨度移动的整段位移都会被吞掉）
+    final double travel = dx - _kDragSlop * dx.sign;
     final double max = widget.destinations.length - 1.0;
-    _dragPosition.value = (_dragStartPosition + dx / _cellWidth).clamp(
-      0.0,
-      max,
-    );
+    _dragPosition.value =
+        (_dragStartPosition + travel / (_cellWidth * _barScale)).clamp(0.0, max);
   }
 
   /// 抬手（或手势被取消）：气泡收缩并吸附到最近一格。
   /// 吸附目标与当前选中项不同时，顺带切换过去，保证气泡和选中态一致。
-  void _endDrag({bool cancel = false}) {
+  void _endDrag({int? pointer, bool cancel = false}) {
+    // 多指同时按在底栏上时，只认第一个按下的那根手指；否则第二根手指抬起
+    // 会把第一根手指的拖动/按压状态一起收掉
+    if (pointer != null && pointer != _activePointer) return;
     _activePointer = null;
     _pressController.reverse();
+    final int? pressed = _pressedCell;
+    _pressedCell = null;
     final double? from = _dragPosition.value;
     _dragPosition.value = null;
-    if (from == null) return;
-    final int nearest = from.round().clamp(0, widget.destinations.length - 1);
-    _from = from;
-    _to = nearest.toDouble();
-    _controller
-      ..reset()
-      ..forward();
-    if (!cancel && nearest != widget.selectedIndex) {
-      widget.onDestinationSelected?.call(nearest);
+
+    final int target;
+    if (from == null) {
+      // 只点了一下、没拖动：气泡已经在按下时滑到那一格了，这里不再动时间轴。
+      // 选中由 destination 的 onTap 确认（它在本回调之后才触发）
+      if (pressed == null) return;
+      target = pressed;
+    } else {
+      target = from.round().clamp(0, widget.destinations.length - 1);
+      // 不能用 _animateTo：它取的是 [_position]，而此刻拖动位置刚被清掉
+      _from = from;
+      _to = target.toDouble();
+      _controller
+        ..duration = widget.animationDuration
+        ..reset()
+        ..forward();
+      // 拖动松手 = 直接切换（不再依赖 onTap，手指可能已经离开那一格）。
+      // 和点击那条路一样，只有真的换了格才通知，避免 setIndex 走「重复点击
+      // 当前项」的分支（那会触发刷新）
+      if (!cancel && target != widget.selectedIndex) {
+        widget.onDestinationSelected?.call(target);
+      }
     }
+
+    // 选中到底切没切过去，由 onTap / onDestinationSelected 决定，可能是被拒绝的
+    // （长按菜单、手势被取消、未登录被拦下、回调被忽略……）。
+    // 下一帧如果气泡还停在「没被选中」的格子上，就滑回真正选中的那一格。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _activePointer != null) return;
+      if (widget.selectedIndex != target) {
+        _animateTo(widget.selectedIndex.toDouble());
+      }
+    });
   }
 
   @override
@@ -179,11 +320,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
       _controller.duration = widget.animationDuration;
     }
     if (oldWidget.selectedIndex != widget.selectedIndex) {
-      _from = _position;
-      _to = widget.selectedIndex.toDouble();
-      _controller
-        ..reset()
-        ..forward();
+      _animateTo(widget.selectedIndex.toDouble());
     }
   }
 
@@ -213,135 +350,404 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
 
     final padding = MediaQuery.viewPaddingOf(context);
 
-    // 玻璃内可用宽度（去掉左右 padding）再平分到每一格
     final int count = widget.destinations.length;
+    final double width = MediaQuery.sizeOf(context).width;
+    // 底栏到屏幕底边的距离（含安全区），左右各留同样的一段
+    final double bottomInset = widget.bottomPadding + padding.bottom;
+    final double safeSide = math.max(padding.left, padding.right);
+    // 极窄屏（分屏 / 折叠屏悬停）时优先压缩左右留白，保证底栏不会比屏幕还宽
+    final double maxSide = math.max(
+      safeSide,
+      (width - count * _kMinCellWidth) / 2,
+    );
+    final double sideInset = math.min(
+      math.max(bottomInset * _kSideMarginRatio, safeSide),
+      maxSide,
+    );
+    final double available = math.max(0.0, width - 2 * sideInset);
+    // 底栏铺满可用宽度：左右留白因此严格等于「到屏幕底边的距离」。
+    // 只给「整条宽度」设上限（平板 / 横屏），格宽由它平均分出来，
+    // 这样气泡位置（用 `_cell` 反推）永远和实际布局一致。
+    final double barWidth = math.min(available, _kMaxBarWidth);
+    final double cell = barWidth / count;
+    _cell = cell;
     final double cellWidth = _cellWidth;
-    final Color bubbleColor =
-        widget.indicatorColor ??
-        navigationBarTheme.indicatorColor ??
-        defaults.indicatorColor!;
+    // 静止：气泡四周留白一致（左右与上下相同，弧度和底栏一致）；
+    // 按下：在中点基础上撑到溢出底栏
+    final double restWidth = cellWidth - 2 * _kIndicatorInnerInset;
+    // 显式指定了选中指示器颜色时拿它给气泡着色，否则用主题色
+    final Color? indicatorTint =
+        widget.indicatorColor ?? navigationBarTheme.indicatorColor;
 
     return Padding(
-      padding: .fromLTRB(
-        padding.left,
-        0,
-        padding.right,
-        widget.bottomPadding + padding.bottom,
-      ),
-      child: SizedBox(
-        height: _kNavigationHeight,
-        width: count * _kIndicatorWidth,
-        // Listener 放在最外层（所有子节点的祖先）：它用原始指针事件，
-        // 不会和下面每个 destination 的点击识别器抢手势（点按依旧由各自的
-        // GestureDetector 处理），同时无论命中玻璃、气泡还是图标都能收到按下事件。
-        child: Listener(
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: (_) => _endDrag(),
-          onPointerCancel: (_) => _endDrag(cancel: true),
-          child: Stack(
-            // 气泡按压缩放后会超出 55 高的胶囊，这一层不能裁剪
-            clipBehavior: Clip.none,
-            children: [
-              // 玻璃本体只包一层不可见占位：内容单独画在外层，
-              // 这样玻璃自己的 ClipPath（外形裁剪）不会把放大后的气泡切掉。
-              Positioned.fill(
-                child: LiquidGlass(
-                  shape: _kNavigationShape,
-                  blur: _kBlurSigma,
-                  // 半透明着色：下面的内容会被高斯模糊后透出来。
-                  // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
-                  color:
-                      (widget.backgroundColor ??
-                              navigationBarTheme.backgroundColor ??
-                              defaults.backgroundColor!)
-                          .withValues(alpha: defaults.isDark ? 0.32 : 0.22),
-                  highlightColor: Colors.white,
-                  // 左上亮、右下渐隐的高光边
-                  highlightGradient: defaults.isDark
-                      ? kGlassRimGradientDark
-                      : kGlassRimGradient,
-                  borderWidth: 1.2,
-                  shadowColor: Colors.black.withValues(
-                    alpha: defaults.isDark ? 0.35 : 0.12,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-              // 选中气泡只画一个，跟着选中项横向滑动
-              // （用 Transform 平移，不会触发重新布局；放在图标/文字下面）。
-              // 手指按住时放大、拖动时跟手、抬手后缩回并吸附到最近一格。
-              // 它在玻璃的裁剪之外，所以放大后可以连边框一起超出悬浮底栏。
-              Positioned(
-                left: _kIndicatorPaddingInt,
-                top: _kIndicatorPaddingInt,
-                bottom: _kIndicatorPaddingInt,
-                width: _kIndicatorWidth,
-                child: ValueListenableBuilder<double?>(
-                  valueListenable: _dragPosition,
-                  builder: (context, _, child) => AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, _) => Transform.translate(
-                      offset: Offset(
-                        cellWidth * _position +
-                            (cellWidth - _kIndicatorWidth) / 2,
-                        0,
-                      ),
-                      child: child,
+      padding: .fromLTRB(sideInset, 0, sideInset, bottomInset),
+      // 按住时整条底栏一起放大，松开回落到原尺寸
+      child: AnimatedBuilder(
+        animation: _pressProgress,
+        builder: (context, child) => Transform.scale(
+          scale: _barScale,
+          child: child,
+        ),
+        child: SizedBox(
+          height: _kNavigationHeight,
+          width: count * cell,
+          // Listener 放在最外层（所有子节点的祖先）：它用原始指针事件，
+          // 不会和下面每个 destination 的点击识别器抢手势（点按依旧由各自的
+          // GestureDetector 处理），同时无论命中玻璃、气泡还是图标都能收到按下事件。
+          child: Listener(
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: (event) => _endDrag(pointer: event.pointer),
+            onPointerCancel: (event) =>
+                _endDrag(pointer: event.pointer, cancel: true),
+            child: Stack(
+              // 气泡按压缩放后会超出 55 高的胶囊，这一层不能裁剪
+              clipBehavior: Clip.none,
+              children: [
+                // 玻璃本体只包一层不可见占位：内容单独画在外层，
+                // 这样玻璃自己的 ClipPath（外形裁剪）不会把放大后的气泡切掉。
+                Positioned.fill(
+                  child: LiquidGlass(
+                    shape: _kNavigationShape,
+                    blur: _kBlurSigma,
+                    // 半透明着色：下面的内容会被高斯模糊后透出来。
+                    // iOS 26 的玻璃更“透”，alpha 要比顶栏低不少才看得出玻璃感
+                    color:
+                        (widget.backgroundColor ??
+                                navigationBarTheme.backgroundColor ??
+                                defaults.backgroundColor!)
+                            .withValues(
+                              alpha: defaults.isDark
+                                  ? _kBarFillAlphaDark
+                                  : _kBarFillAlphaLight,
+                            ),
+                    highlightColor: Colors.white,
+                    // 左上亮、右下渐隐的高光边
+                    highlightGradient: defaults.isDark
+                        ? kGlassRimGradientDark
+                        : kGlassRimGradient,
+                    // 底栏本身几乎看不到描边，只有一层很淡的边缘高光
+                    borderWidth: 0.9,
+                    shadowColor: Colors.black.withValues(
+                      alpha: defaults.isDark ? 0.32 : 0.10,
                     ),
-                    child: child,
+                    child: const SizedBox.expand(),
                   ),
-                  child: ScaleTransition(
-                    scale: _pressScale,
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        shape: _kNavigationShape,
-                        color: bubbleColor,
+                ),
+                // 选中气泡只画一个，横向跟着选中项滑动、按住时撑大。
+                // 尺寸随按压进度变化（不是 Transform 缩放）：非等比缩放会把
+                // 胶囊两端的圆头压成圆角矩形，而 IT之家 那颗撑大后仍是标准胶囊。
+                // 它画在栏内留白区域里，撑大后靠 Stack 的 Clip.none 溢出底栏。
+                Positioned.fill(
+                  child: Padding(
+                    padding: _kIndicatorPadding,
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _controller,
+                        _dragPosition,
+                        _pressProgress,
+                      ]),
+                      builder: (context, child) {
+                        final double press = _pressProgress.value;
+                        final double width = restWidth + _kPressGrow * press;
+                        final double height =
+                            _kIndicatorRestHeight + _kPressGrow * press;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left:
+                                  cellWidth * _position +
+                                  (cellWidth - width) / 2 -
+                                  _kIndicatorEdgePadding,
+                              top:
+                                  (_kNavigationInnerHeight - height) / 2 -
+                                  _kIndicatorEdgePadding,
+                              width: width + 2 * _kIndicatorEdgePadding,
+                              height: height + 2 * _kIndicatorEdgePadding,
+                              child: child!,
+                            ),
+                          ],
+                        );
+                      },
+                      child: _IndicatorLens(
+                        isDark: defaults.isDark,
+                        accent: defaults.accent,
+                        press: _pressProgress,
+                        tint: indicatorTint,
                       ),
-                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
-              ),
-              Positioned.fill(
-                child: Padding(
-                  padding: _kIndicatorPadding,
-                  child: Row(
-                    crossAxisAlignment: .stretch,
-                    children: <Widget>[
-                      for (int i = 0; i < count; i++)
-                        Expanded(
-                          child: _SelectableAnimatedBuilder(
-                            duration: widget.animationDuration,
-                            isSelected: i == widget.selectedIndex,
-                            builder: (context, animation) {
-                              return _NavigationDestinationInfo(
-                                index: i,
-                                selectedIndex: widget.selectedIndex,
-                                totalNumberOfDestinations: count,
-                                selectedAnimation: animation,
-                                labelBehavior: effectiveLabelBehavior,
-                                indicatorColor: widget.indicatorColor,
-                                indicatorShape: widget.indicatorShape,
-                                overlayColor: widget.overlayColor,
-                                onTap: _handleTap(i),
-                                labelTextStyle: widget.labelTextStyle,
-                                labelPadding: widget.labelPadding,
-                                child: widget.destinations[i],
-                              );
-                            },
-                          ),
-                        ),
-                    ],
+                // 图标 / 文字层。整层跟着气泡的位置重建：每个 destination 的
+                // 「选中强调度」= 气泡离它多近（1 = 正中，0 = 至少隔了一格），
+                // 所以颜色永远和气泡同步，拖动气泡时文字也是实时跟手变色的。
+                Positioned.fill(
+                  child: Padding(
+                    padding: _kIndicatorPadding,
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([_controller, _dragPosition]),
+                      builder: (context, _) {
+                        final double position = _position;
+                        return Row(
+                          crossAxisAlignment: .stretch,
+                          children: <Widget>[
+                            for (int i = 0; i < count; i++)
+                              Expanded(
+                                child: _NavigationDestinationInfo(
+                                  index: i,
+                                  selectedIndex: widget.selectedIndex,
+                                  totalNumberOfDestinations: count,
+                                  selectedAnimation: _Emphasis(
+                                    // 越靠近气泡越强调，三次方让它只在气泡附近才明显变色
+                                    math
+                                        .pow(
+                                          (1 - (position - i).abs()).clamp(
+                                            0.0,
+                                            1.0,
+                                          ),
+                                          3,
+                                        )
+                                        .toDouble(),
+                                  ),
+                                  labelBehavior: effectiveLabelBehavior,
+                                  onTap: _handleTap(i),
+                                  labelTextStyle: widget.labelTextStyle,
+                                  labelPadding: widget.labelPadding,
+                                  child: widget.destinations[i],
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// 只读的「选中强调度」：由气泡当前位置算出来，自己不会动。
+///
+/// 用它取代每个 destination 各自持有的 [AnimationController]，
+/// 图标 / 文字的颜色就和气泡位置严格一致（含拖动途中的实时跟手）。
+class _Emphasis extends Animation<double> {
+  const _Emphasis(this.value);
+
+  @override
+  final double value;
+
+  @override
+  AnimationStatus get status => value >= 1
+      ? AnimationStatus.completed
+      : value <= 0
+      ? AnimationStatus.dismissed
+      : AnimationStatus.forward;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) {}
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) {}
+}
+
+/// 选中项外面那颗「凸出底栏」的玻璃囊泡。
+///
+/// 它叠在底栏玻璃之上，会把「底栏 + 底下的页面内容」再糊一次，
+/// 所以镜头里比栏内更朦胧，像一块有厚度的玻璃透镜。
+class _IndicatorLens extends StatelessWidget {
+  const _IndicatorLens({
+    required this.isDark,
+    required this.accent,
+    required this.press,
+    this.tint,
+  });
+
+  final bool isDark;
+
+  /// 主题色，用作气泡的一点点染色
+  final Color accent;
+
+  /// 显式指定的指示器颜色（`indicatorColor`），为 null 时用 [accent]
+  final Color? tint;
+
+  /// 按压进度（0 = 静止，1 = 按到底）。
+  /// 静止时气泡只是一层很淡的膜，按下去才变成通透的玻璃囊泡——
+  /// 和 IT之家 那颗「按下去才亮起来」的泡泡一样。
+  final Animation<double> press;
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: press,
+      builder: (context, _) {
+        final double t = press.value.clamp(0.0, 1.0);
+        // 静止：一层淡淡的暗膜（和 IT之家 选中格那种“压下去一点的灰”一致）；
+        // 按下：变成明显更亮的玻璃囊泡
+        final Color accentTint = tint ?? accent;
+        final Color restFill = isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Color.alphaBlend(
+                accentTint.withValues(alpha: 0.03),
+                Colors.black.withValues(alpha: 0.055),
+              );
+        final Color pressedFill = isDark
+            ? Color.alphaBlend(
+                accentTint.withValues(alpha: 0.16),
+                Colors.white.withValues(alpha: 0.14),
+              )
+            : Color.alphaBlend(
+                accentTint.withValues(alpha: 0.05),
+                Colors.white.withValues(alpha: 0.56),
+              );
+        final Color fill = Color.lerp(restFill, pressedFill, t)!;
+        // 软边那层只取一半浓度，免得糊成一团白雾
+        final Color halo = fill.withValues(alpha: fill.a * 0.55);
+
+        return Padding(
+          padding: const EdgeInsets.all(_kIndicatorEdgePadding),
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // 先铺一层糊掉的「同色雾」当软边：BackdropFilter 没法做羽化，
+              // 用一层纯色胶囊再模糊，边缘就会柔和地过渡进底栏，而不是一条硬边
+              IgnorePointer(
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(
+                    sigmaX: _kIndicatorEdgeBlur,
+                    sigmaY: _kIndicatorEdgeBlur,
+                  ),
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      shape: _kIndicatorShape,
+                      color: halo,
+                    ),
+                  ),
+                ),
+              ),
+              LiquidGlass(
+                shape: _kIndicatorShape,
+                blur: _kIndicatorBlurSigma,
+                color: fill,
+                highlightColor: null,
+                highlightGradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(
+                      alpha: isDark
+                          ? _lerp(0.20, 0.66, t)
+                          : _lerp(0.32, 0.92, t),
+                    ),
+                    Colors.white.withValues(
+                      alpha: isDark
+                          ? _lerp(0.03, 0.12, t)
+                          : _lerp(0.06, 0.20, t),
+                    ),
+                  ],
+                ),
+                // 描边交给外面的 _LensOutlinePainter（它带上下渐变），
+                // 这里只要玻璃本身
+                borderWidth: 0,
+                // 不画外投影：囊泡边缘已经软化，再加投影会糊出一圈脏灰
+                child: const SizedBox.expand(),
+              ),
+              // 顶部内高光 + 底部反光：给囊泡一点厚度感
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    shape: _kIndicatorShape,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(
+                          alpha: isDark ? 0.10 : _lerp(0.02, 0.04, t),
+                        ),
+                        const Color(0x00FFFFFF),
+                        Colors.white.withValues(
+                          alpha: isDark
+                              ? _lerp(0.04, 0.07, t)
+                              : _lerp(0.10, 0.22, t),
+                        ),
+                      ],
+                      stops: const [0.0, 0.42, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              // 外沿一条渐变描边：顶部偏暗、底部亮，玻璃才有厚度和边界
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: _LensOutlinePainter(
+                    width: _lerp(1.0, 1.6, t),
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(
+                          alpha: isDark
+                              ? _lerp(0.06, 0.10, t)
+                              : _lerp(0.04, 0.10, t),
+                        ),
+                        const Color(0x00000000),
+                        Colors.white.withValues(
+                          alpha: isDark
+                              ? _lerp(0.25, 0.55, t)
+                              : _lerp(0.45, 0.95, t),
+                        ),
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 沿气泡外沿描一条细边，颜色随高度渐变：
+/// 顶部暗一点、底部亮一点——玻璃透镜的“上暗下亮”就是这样来的
+class _LensOutlinePainter extends CustomPainter {
+  const _LensOutlinePainter({required this.gradient, required this.width});
+
+  final Gradient gradient;
+  final double width;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(width / 2);
+    canvas.drawPath(
+      _kIndicatorShape.getOuterPath(rect, textDirection: .ltr),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..shader = gradient.createShader(Offset.zero & size)
+        ..isAntiAlias = true,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LensOutlinePainter oldDelegate) =>
+      oldDelegate.gradient != gradient || oldDelegate.width != width;
 }
 
 class FloatingNavigationDestination extends StatelessWidget {
@@ -392,20 +798,27 @@ class FloatingNavigationDestination extends StatelessWidget {
             navigationBarTheme.iconTheme?.resolve(disabledState) ??
             defaults.iconTheme!.resolve(disabledState)!;
 
-        final Widget selectedIconWidget = IconTheme.merge(
-          data: enabled ? selectedIconTheme : disabledIconTheme,
-          child: selectedIcon ?? icon,
-        );
-        final Widget unselectedIconWidget = IconTheme.merge(
-          data: enabled ? unselectedIconTheme : disabledIconTheme,
-          child: icon,
-        );
-        return _StatusTransitionWidgetBuilder(
+        final Widget selectedIconWidget = selectedIcon ?? icon;
+        return AnimatedBuilder(
           animation: animation,
-          builder: (context, child) {
-            return animation.isForwardOrCompleted
-                ? selectedIconWidget
-                : unselectedIconWidget;
+          builder: (context, _) {
+            final bool selected = animation.value >= 0.5;
+            final IconThemeData themeData = enabled
+                ? (selected ? selectedIconTheme : unselectedIconTheme)
+                : disabledIconTheme;
+            return IconTheme.merge(
+              data: enabled
+                  ? themeData.copyWith(
+                      // 图标颜色跟着切换渐变成强调色
+                      color: Color.lerp(
+                        unselectedIconTheme.color,
+                        selectedIconTheme.color,
+                        animation.value,
+                      ),
+                    )
+                  : themeData,
+              child: selected ? selectedIconWidget : icon,
+            );
           },
         );
       },
@@ -427,10 +840,12 @@ class FloatingNavigationDestination extends StatelessWidget {
             navigationBarTheme.labelPadding ??
             defaults.labelPadding!;
 
-        final textStyle = enabled
-            ? animation.isForwardOrCompleted
-                  ? effectiveSelectedLabelTextStyle
-                  : effectiveUnselectedLabelTextStyle
+        final TextStyle? textStyle = enabled
+            ? TextStyle.lerp(
+                effectiveUnselectedLabelTextStyle,
+                effectiveSelectedLabelTextStyle,
+                animation.value,
+              )
             : effectiveDisabledLabelTextStyle;
 
         return Padding(
@@ -503,9 +918,6 @@ class _NavigationDestinationInfo extends InheritedWidget {
     required this.totalNumberOfDestinations,
     required this.selectedAnimation,
     required this.labelBehavior,
-    required this.indicatorColor,
-    required this.indicatorShape,
-    required this.overlayColor,
     required this.onTap,
     this.labelTextStyle,
     this.labelPadding,
@@ -521,12 +933,6 @@ class _NavigationDestinationInfo extends InheritedWidget {
   final Animation<double> selectedAnimation;
 
   final NavigationDestinationLabelBehavior labelBehavior;
-
-  final Color? indicatorColor;
-
-  final ShapeBorder? indicatorShape;
-
-  final WidgetStateProperty<Color?>? overlayColor;
 
   final VoidCallback onTap;
 
@@ -552,73 +958,6 @@ class _NavigationDestinationInfo extends InheritedWidget {
         selectedAnimation != oldWidget.selectedAnimation ||
         labelBehavior != oldWidget.labelBehavior ||
         onTap != oldWidget.onTap;
-  }
-}
-
-class NavigationIndicator extends StatelessWidget {
-  const NavigationIndicator({
-    super.key,
-    required this.animation,
-    this.color,
-    this.width = _kIndicatorWidth,
-    this.height = _kIndicatorHeight,
-  });
-
-  final Animation<double> animation;
-
-  final Color? color;
-
-  final double width;
-
-  final double height;
-
-  static final _anim = Tween<double>(
-    begin: .5,
-    end: 1.0,
-  ).chain(CurveTween(curve: Curves.easeInOutCubicEmphasized));
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final double scale = animation.isDismissed
-            ? 0.0
-            : _anim.evaluate(animation);
-
-        return Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.diagonal3Values(scale, 1.0, 1.0),
-          child: child,
-        );
-      },
-
-      child: _StatusTransitionWidgetBuilder(
-        animation: animation,
-        builder: (context, child) {
-          return _SelectableAnimatedBuilder(
-            isSelected: animation.isForwardOrCompleted,
-            duration: const Duration(milliseconds: 100),
-            alwaysDoFullAnimation: true,
-            builder: (context, fadeAnimation) {
-              return FadeTransition(
-                opacity: fadeAnimation,
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    shape: _kNavigationShape,
-                    color: color ?? Theme.of(context).colorScheme.secondary,
-                  ),
-                  child: const SizedBox(
-                    width: _kIndicatorWidth,
-                    height: _kIndicatorHeight,
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
   }
 }
 
@@ -675,11 +1014,13 @@ class _DestinationLayoutAnimationBuilder extends StatelessWidget {
       case NavigationDestinationLabelBehavior.alwaysHide:
         return builder(context, kAlwaysDismissedAnimation);
       case NavigationDestinationLabelBehavior.onlyShowSelected:
-        return _CurvedAnimationBuilder(
-          animation: info.selectedAnimation,
-          curve: Curves.easeInOutCubicEmphasized,
-          reverseCurve: Curves.easeInOutCubicEmphasized.flipped,
-          builder: builder,
+        // [_Emphasis] 的值由气泡位置算出来、不会「反向」，所以只需要一条正向
+        // 曲线；父级 AnimatedBuilder 每帧都会重建这一层，不必再套一层监听。
+        return builder(
+          context,
+          CurveTween(curve: Curves.easeInOutCubicEmphasized).animate(
+            info.selectedAnimation,
+          ),
         );
     }
   }
@@ -730,7 +1071,8 @@ class _NavigationDestinationLayoutDelegate extends MultiChildLayoutDelegate {
 
       end: halfHeight(iconSize) + halfHeight(labelSize),
     ).transform(animation.value);
-    final double iconYPosition = halfHeight(size) - yPositionOffset;
+    // IT之家 的图标/文字整体略微下沉，文字离底边更近，所以这里加一点向下偏移
+    final double iconYPosition = halfHeight(size) - yPositionOffset + 1.5;
 
     positionChild(
       iconId,
@@ -756,151 +1098,6 @@ class _NavigationDestinationLayoutDelegate extends MultiChildLayoutDelegate {
   }
 }
 
-class _StatusTransitionWidgetBuilder extends StatusTransitionWidget {
-  const _StatusTransitionWidgetBuilder({
-    required super.animation,
-    required this.builder,
-    // ignore: unused_element_parameter
-    this.child,
-  });
-
-  final TransitionBuilder builder;
-
-  final Widget? child;
-
-  @override
-  Widget build(BuildContext context) => builder(context, child);
-}
-
-class _SelectableAnimatedBuilder extends StatefulWidget {
-  const _SelectableAnimatedBuilder({
-    required this.isSelected,
-    this.duration = const Duration(milliseconds: 200),
-    this.alwaysDoFullAnimation = false,
-    required this.builder,
-  });
-
-  final bool isSelected;
-
-  final Duration duration;
-
-  final bool alwaysDoFullAnimation;
-
-  final Widget Function(BuildContext, Animation<double>) builder;
-
-  @override
-  _SelectableAnimatedBuilderState createState() =>
-      _SelectableAnimatedBuilderState();
-}
-
-class _SelectableAnimatedBuilderState extends State<_SelectableAnimatedBuilder>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this);
-    _controller.duration = widget.duration;
-    _controller.value = widget.isSelected ? 1.0 : 0.0;
-  }
-
-  @override
-  void didUpdateWidget(_SelectableAnimatedBuilder oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.duration != widget.duration) {
-      _controller.duration = widget.duration;
-    }
-    if (oldWidget.isSelected != widget.isSelected) {
-      if (widget.isSelected) {
-        _controller.forward(from: widget.alwaysDoFullAnimation ? 0 : null);
-      } else {
-        _controller.reverse(from: widget.alwaysDoFullAnimation ? 1 : null);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.builder(context, _controller);
-  }
-}
-
-class _CurvedAnimationBuilder extends StatefulWidget {
-  const _CurvedAnimationBuilder({
-    required this.animation,
-    required this.curve,
-    required this.reverseCurve,
-    required this.builder,
-  });
-
-  final Animation<double> animation;
-  final Curve curve;
-  final Curve reverseCurve;
-  final Widget Function(BuildContext, Animation<double>) builder;
-
-  @override
-  _CurvedAnimationBuilderState createState() => _CurvedAnimationBuilderState();
-}
-
-class _CurvedAnimationBuilderState extends State<_CurvedAnimationBuilder> {
-  late AnimationStatus _animationDirection;
-  AnimationStatus? _preservedDirection;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationDirection = widget.animation.status;
-    _updateStatus(widget.animation.status);
-    widget.animation.addStatusListener(_updateStatus);
-  }
-
-  @override
-  void dispose() {
-    widget.animation.removeStatusListener(_updateStatus);
-    super.dispose();
-  }
-
-  void _updateStatus(AnimationStatus status) {
-    if (_animationDirection != status) {
-      setState(() {
-        _animationDirection = status;
-      });
-    }
-    switch (status) {
-      case AnimationStatus.forward || AnimationStatus.reverse
-          when _preservedDirection != null:
-        break;
-      case AnimationStatus.forward || AnimationStatus.reverse:
-        setState(() {
-          _preservedDirection = status;
-        });
-      case AnimationStatus.completed || AnimationStatus.dismissed:
-        setState(() {
-          _preservedDirection = null;
-        });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final shouldUseForwardCurve =
-        (_preservedDirection ?? _animationDirection) != AnimationStatus.reverse;
-
-    final Animation<double> curvedAnimation = CurveTween(
-      curve: shouldUseForwardCurve ? widget.curve : widget.reverseCurve,
-    ).animate(widget.animation);
-
-    return widget.builder(context, curvedAnimation);
-  }
-}
-
 const _indicatorDark = Color(0x15FFFFFF);
 const _indicatorLight = Color(0x10000000);
 
@@ -917,6 +1114,9 @@ class _NavigationBarDefaultsM3 extends NavigationBarThemeData {
   late final _textTheme = Theme.of(context).textTheme;
 
   bool get isDark => _colors.isDark;
+
+  /// 选中态强调色（图标 / 文字 / 气泡染色都用它）
+  Color get accent => _colors.primary;
 
   BorderSide get borderSide => _colors.isDark
       ? const BorderSide(color: Color(0x08FFFFFF))
@@ -935,12 +1135,12 @@ class _NavigationBarDefaultsM3 extends NavigationBarThemeData {
   WidgetStateProperty<IconThemeData?>? get iconTheme {
     return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       return IconThemeData(
-        size: 20.0,
+        size: 22.0,
         color: states.contains(WidgetState.disabled)
-            ? _colors.onSurfaceVariant.withValues(alpha: 0.38)
+            ? _colors.onSurface.withValues(alpha: 0.38)
             : states.contains(WidgetState.selected)
-            ? _colors.onSecondaryContainer
-            : _colors.onSurfaceVariant,
+            ? accent
+            : _colors.onSurface,
       );
     });
   }
@@ -958,10 +1158,10 @@ class _NavigationBarDefaultsM3 extends NavigationBarThemeData {
       final TextStyle style = _textTheme.labelMedium!;
       return style.apply(
         color: states.contains(WidgetState.disabled)
-            ? _colors.onSurfaceVariant.withValues(alpha: 0.38)
+            ? _colors.onSurface.withValues(alpha: 0.38)
             : states.contains(WidgetState.selected)
-            ? _colors.onSurface
-            : _colors.onSurfaceVariant,
+            ? accent
+            : _colors.onSurface,
       );
     });
   }

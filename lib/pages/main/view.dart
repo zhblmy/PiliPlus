@@ -574,13 +574,25 @@ class _MainAppState extends PopScopeState<MainApp>
     final EdgeInsets pagePadding = useBottomNav
         ? .only(top: _padding.top)
         : EdgeInsets.zero;
-    Widget pageOf(NavigationBarType type) => Padding(
-      padding: switch (type) {
-        .home || .dynamics => EdgeInsets.zero,
-        _ => pagePadding,
-      },
-      child: type.page,
-    );
+    Widget pageOf(NavigationBarType type) {
+      final page = type.page;
+      // 消息页自带 AppBar（会自己补状态栏内边距），和别的页面不一样：
+      // 底栏模式下外层不补内边距；侧栏模式下外层 Padding 已经补过状态栏，
+      // 得把 MediaQuery 的顶部安全区去掉，否则 AppBar 会再补一遍。
+      // 两种模式都用同一个 _MsgPageHost（结构固定），横竖屏 / 平板切换模式时
+      // 消息页的 element 不会被重建，滚动位置和 keep-alive 状态都不会丢。
+      if (type == .msg) {
+        return _MsgPageHost(page: page, removeTop: !useBottomNav);
+      }
+      return Padding(
+        padding: switch (type) {
+          // 首页、动态页是盖住状态栏的玻璃顶栏
+          .home || .dynamics => EdgeInsets.zero,
+          _ => pagePadding,
+        },
+        child: page,
+      );
+    }
 
     Widget child;
     if (_mainController.mainTabBarView) {
@@ -652,21 +664,27 @@ class _MainAppState extends PopScopeState<MainApp>
 
   Widget _buildIcon({required NavigationBarType type, bool selected = false}) {
     final icon = selected ? type.selectIcon : type.icon;
-    return type == .dynamics
-        ? Obx(
-            () {
-              final dynCount = _mainController.dynCount.value;
-              return Badge(
-                isLabelVisible: dynCount > 0,
-                label: _mainController.dynamicBadgeMode == .number
-                    ? Text(dynCount.toString())
-                    : null,
-                padding: const .symmetric(horizontal: 6),
-                child: icon,
-              );
-            },
-          )
-        : icon;
+    return switch (type) {
+      .dynamics => Obx(
+        () {
+          final dynCount = _mainController.dynCount.value;
+          return Badge(
+            isLabelVisible: dynCount > 0,
+            label: _mainController.dynamicBadgeMode == .number
+                ? Text(dynCount.toString())
+                : null,
+            padding: const .symmetric(horizontal: 6),
+            child: icon,
+          );
+        },
+      ),
+      .msg => msgUnreadBadge(
+        mainController: _mainController,
+        padding: const .symmetric(horizontal: 6),
+        child: icon,
+      ),
+      _ => icon,
+    };
   }
 
   Widget userAndSearchVertical() {
@@ -674,7 +692,9 @@ class _MainAppState extends PopScopeState<MainApp>
       children: [
         userAvatar(colorScheme: _colorScheme, mainController: _mainController),
         const SizedBox(height: 8),
-        msgBadge(_mainController),
+        // 侧栏里已经有「消息」分类时，顶部不再重复放一个消息入口
+        if (!_mainController.navigationBars.contains(NavigationBarType.msg))
+          msgBadge(_mainController),
         IconButton(
           tooltip: '搜索',
           icon: const Icon(
@@ -684,6 +704,31 @@ class _MainAppState extends PopScopeState<MainApp>
           onPressed: () => Get.toNamed('/search'),
         ),
       ],
+    );
+  }
+}
+
+/// 消息页的容器。
+///
+/// 消息页自带 AppBar、会自己补状态栏内边距，所以：
+/// * 底栏模式（body 铺到状态栏底下）：什么都不用做，让 AppBar 自己补；
+/// * 侧栏模式（外层 `Padding` 已经补过状态栏）：把顶部安全区去掉，否则补两遍。
+///
+/// 两种模式都用这个 widget（结构固定，只有 `MediaQueryData` 变），
+/// 横竖屏切换时消息页的 element 不会被重建；`MediaQuery.of` 的依赖也收在这一层，
+/// 不会让整个主页跟着键盘弹起一起重建。
+class _MsgPageHost extends StatelessWidget {
+  const _MsgPageHost({required this.page, required this.removeTop});
+
+  final Widget page;
+  final bool removeTop;
+
+  @override
+  Widget build(BuildContext context) {
+    // 结构固定（MediaQuery → page）：切换模式/横竖屏时只有数据变，element 不重建
+    return MediaQuery(
+      data: MediaQuery.of(context).removePadding(removeTop: removeTop),
+      child: page,
     );
   }
 }

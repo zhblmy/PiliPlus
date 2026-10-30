@@ -170,7 +170,8 @@ class _MediaPageState extends CommonPageState<MinePage>
               onPressed: () => Get.toNamed('/search'),
               icon: const Icon(Icons.search),
             ),
-            msgBadge(_mainController),
+            // 底栏已经有「消息」分类时不用再放一个重复入口
+            if (!_mainController.hasMsg) msgBadge(_mainController),
           ],
           if (GStorage.reply != null)
             IconButton(

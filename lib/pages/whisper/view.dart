@@ -5,8 +5,10 @@ import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart';
 import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/pages/whisper/widgets/item.dart';
+import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/extension/three_dot_ext.dart';
 import 'package:PiliPlus/utils/theme_utils.dart';
@@ -21,11 +23,45 @@ class WhisperPage extends StatefulWidget {
   State<WhisperPage> createState() => _WhisperPageState();
 }
 
-class _WhisperPageState extends State<WhisperPage> {
-  final _controller = Get.put(WhisperController());
+class _WhisperPageState extends State<WhisperPage>
+    with AutomaticKeepAliveClientMixin {
+  // 底栏的「消息」分类和 /whisper 路由共用同一个控制器，避免重复注册
+  final _controller = Get.putOrFind(WhisperController.new);
+
+  MainController? _mainController;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    // /whisper 也可能在没有任何底栏的场景下被直接打开，取不到就算了
+    _mainController = Get.isRegistered<MainController>()
+        ? Get.find<MainController>()
+        : null;
+  }
+
+  /// 作为底栏分类使用时和别的 Tab 一样：内容上滑收起底栏、下滑弹出。
+  /// 只动底栏，不动首页那条玻璃顶栏的状态。
+  bool _onScroll(UserScrollNotification notification) {
+    final mainController = _mainController;
+    if (mainController == null || !mainController.useBottomNav) return false;
+    if (notification.metrics.axis != .vertical) return false;
+    // idle（滚动结束）不处理，否则一抬手就把收起的底栏又弹回来
+    switch (notification.direction) {
+      case .forward:
+        mainController.showBottomBar?.value = true;
+      case .reverse:
+        mainController.showBottomBar?.value = false;
+      case _:
+    }
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final padding = MediaQuery.viewPaddingOf(context);
     return SimpleScaffold(
@@ -93,17 +129,20 @@ class _WhisperPageState extends State<WhisperPage> {
           const SizedBox(width: 5),
         ],
       ),
-      body: refreshIndicator(
-        onRefresh: _controller.onRefresh,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            _buildTopItems(theme, padding),
-            SliverPadding(
-              padding: EdgeInsets.only(bottom: padding.bottom + 100),
-              sliver: Obx(() => _buildBody(_controller.loadingState.value)),
-            ),
-          ],
+      body: NotificationListener<UserScrollNotification>(
+        onNotification: _onScroll,
+        child: refreshIndicator(
+          onRefresh: _controller.onRefresh,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildTopItems(theme, padding),
+              SliverPadding(
+                padding: EdgeInsets.only(bottom: padding.bottom + 100),
+                sliver: Obx(() => _buildBody(_controller.loadingState.value)),
+              ),
+            ],
+          ),
         ),
       ),
     );

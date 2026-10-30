@@ -547,27 +547,38 @@ Widget msgBadge(MainController mainController) {
   );
 }
 
-Widget _msgBadgeIcon(MainController mainController) {
+/// 「消息」未读角标：首页顶栏入口、底栏 / 侧栏的消息分类共用同一套语义
+/// （`number` 显示具体数字、`dot` 只显示圆点、`hidden` 整体不显示）。
+///
+/// 抽出来是因为同一颗角标现在有两个入口，语义写两份迟早会走偏。
+Widget msgUnreadBadge({
+  required MainController mainController,
+  required Widget child,
+  EdgeInsetsGeometry? padding,
+}) {
   return Obx(() {
     final count = mainController.msgUnReadCount.value;
     final mode = mainController.msgBadgeMode;
     final isNumBadge = mode == .number;
-    return IconButton(
-      tooltip: '消息',
-      onPressed: () {
-        mainController
-          ..clearUnreadMsg()
-          ..lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
-        Get.toNamed('/whisper');
-      },
-      icon: Badge(
-        isLabelVisible: mode != .hidden && count != null,
-        alignment: isNumBadge
-            ? const Alignment(0.0, -0.85)
-            : const Alignment(1.0, -0.85),
-        label: isNumBadge && count != null ? Text(count) : null,
-        child: const Icon(Icons.notifications_none),
-      ),
+    return Badge(
+      isLabelVisible: mode != .hidden && count != null,
+      alignment: isNumBadge
+          ? const Alignment(0.0, -0.85)
+          : const Alignment(1.0, -0.85),
+      padding: padding,
+      label: isNumBadge && count != null ? Text(count) : null,
+      child: child,
     );
   });
+}
+
+Widget _msgBadgeIcon(MainController mainController) {
+  return IconButton(
+    tooltip: '消息',
+    onPressed: mainController.openMsgPage,
+    icon: msgUnreadBadge(
+      mainController: mainController,
+      child: const Icon(Icons.notifications_none),
+    ),
+  );
 }

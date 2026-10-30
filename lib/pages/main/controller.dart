@@ -12,6 +12,7 @@ import 'package:PiliPlus/models/common/nav_bar_config.dart';
 import 'package:PiliPlus/pages/dynamics/controller.dart';
 import 'package:PiliPlus/pages/home/controller.dart';
 import 'package:PiliPlus/pages/mine/view.dart';
+import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/services/account_service.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
@@ -50,6 +51,9 @@ class MainController extends GetxController
 
   late bool hasHome = false;
   late final homeController = Get.putOrFind(HomeController.new);
+
+  /// 底栏里是否有「消息」分类（有的话未读数走这个分类的角标）
+  late bool hasMsg = false;
 
   late final disableLikeMsg = Pref.disableLikeMsg;
   late DynamicBadgeMode msgBadgeMode = Pref.msgBadgeMode;
@@ -113,8 +117,9 @@ class MainController extends GetxController
     }
 
     hasHome = navigationBars.contains(NavigationBarType.home);
+    hasMsg = navigationBars.contains(NavigationBarType.msg);
     if (msgBadgeMode != DynamicBadgeMode.hidden) {
-      if (hasHome) {
+      if (hasHome || hasMsg) {
         lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
         queryUnreadMsg();
       }
@@ -172,7 +177,7 @@ class MainController extends GetxController
 
   Future<void> queryUnreadMsg([bool isChangeType = false]) async {
     if (!accountService.isLogin.value ||
-        !hasHome ||
+        !(hasHome || hasMsg) ||
         msgUnReadTypes.isEmpty ||
         msgBadgeMode == DynamicBadgeMode.hidden) {
       clearUnreadMsg();
@@ -230,17 +235,43 @@ class MainController extends GetxController
   void setNavBarConfig() {
     List<int>? navBarSort =
         (GStorage.setting.get(SettingBoxKey.navBarSort) as List?)?.fromCast();
-    late final List<NavigationBarType> navigationBars;
-    if (navBarSort == null || navBarSort.isEmpty) {
-      navigationBars = NavigationBarType.values;
-    } else {
-      navigationBars = navBarSort
-          .map(NavigationBarType.values.elementAt)
-          .toList();
+    if (navBarSort != null && navBarSort.isNotEmpty) {
+      navBarSort = _migrateNavBarSort(navBarSort);
     }
-    this.navigationBars = navigationBars;
+    final int typeCount = NavigationBarType.values.length;
+    final List<NavigationBarType> parsed =
+        // 兜一层：老的 / 手改过的配置里可能有越界下标，直接 elementAt 会抛异常；
+        // 顺便去重，避免同一个分类出现两次
+        (navBarSort ?? const <int>[])
+            .where((e) => e >= 0 && e < typeCount)
+            .map(NavigationBarType.values.elementAt)
+            .toSet()
+            .toList();
+    navigationBars = parsed.isEmpty
+        ? List.of(NavigationBarType.defaultOrder)
+        : parsed;
     final defPage = Pref.defaultHomePage;
     selectedIndex.value = math.max(0, navigationBars.indexOf(defPage));
+  }
+
+  /// 「消息」是后加的分类，老的 `navBarSort` 里没有它。
+  ///
+  /// 只补一次（用 [SettingBoxKey.navBarSortMigrated] 记住）：否则用户主动
+  /// 在「Navbar编辑」里删掉消息后，下次启动又会被塞回来。
+  List<int> _migrateNavBarSort(List<int> cache) {
+    if (GStorage.setting.get(SettingBoxKey.navBarSortMigrated) == true) {
+      return cache;
+    }
+    final int msgIndex = NavigationBarType.msg.index;
+    if (!cache.contains(msgIndex)) {
+      // 插在「我的」前面：首页 → 动态 → 消息 → 我的
+      final int mineIndex = cache.indexOf(NavigationBarType.mine.index);
+      cache = List.of(cache)
+        ..insert(mineIndex == -1 ? cache.length : mineIndex, msgIndex);
+      GStorage.setting.put(SettingBoxKey.navBarSort, cache);
+    }
+    GStorage.setting.put(SettingBoxKey.navBarSortMigrated, true);
+    return cache;
   }
 
   void checkDefaultSearch([bool shouldCheck = false]) {
@@ -260,7 +291,7 @@ class MainController extends GetxController
 
   void checkUnread([bool shouldCheck = false]) {
     if (accountService.isLogin.value &&
-        hasHome &&
+        (hasHome || hasMsg) &&
         msgBadgeMode != DynamicBadgeMode.hidden) {
       if (shouldCheck &&
           navigationBars[selectedIndex.value] != NavigationBarType.home) {
@@ -271,6 +302,21 @@ class MainController extends GetxController
         lastCheckUnreadAt = now;
         queryUnreadMsg();
       }
+    }
+  }
+
+  /// 打开消息页。
+  ///
+  /// 底栏里有「消息」分类就直接切过去（不叠页面），没有才压一层 /whisper 路由。
+  /// 首页 / 侧栏那个「消息」入口都走这里，逻辑只留一份。
+  void openMsgPage() {
+    clearUnreadMsg();
+    lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
+    final int index = navigationBars.indexOf(NavigationBarType.msg);
+    if (index != -1) {
+      setIndex(index);
+    } else {
+      Get.toNamed('/whisper');
     }
   }
 
@@ -288,6 +334,16 @@ class MainController extends GetxController
           ),
         ),
       );
+    }
+  }
+
+  /// 消息页现在是常驻 Tab（keep-alive），只在第一次打开时 `onInit` 拉一次数据。
+  ///
+  /// 但切进消息分类会立刻清掉未读角标——「角标清了、列表还是旧的」自相矛盾。
+  /// 以前每次都是 push 一个全新的 `/whisper`，天然就是新数据，这里补一次刷新。
+  void _refreshMsgPage() {
+    if (Get.isRegistered<WhisperController>()) {
+      Get.find<WhisperController>().onRefresh();
     }
   }
 
@@ -309,6 +365,12 @@ class MainController extends GetxController
         checkUnread();
       } else if (currentNav == NavigationBarType.dynamics) {
         setDynCount();
+      } else if (currentNav == NavigationBarType.msg) {
+        // 打开消息分类即视为已读（和首页那个「消息」入口的行为一致），
+        // 顺带补一次刷新，让列表和「已读」对上
+        clearUnreadMsg();
+        lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
+        _refreshMsgPage();
       }
     } else {
       int now = DateTime.now().millisecondsSinceEpoch;

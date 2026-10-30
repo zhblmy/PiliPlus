@@ -349,7 +349,7 @@ List<SettingsModel> get styleSettings => [
     leading: const Icon(Icons.home_outlined),
     title: '默认启动页',
     value: () => Pref.defaultHomePage,
-    items: NavigationBarType.values,
+    items: NavigationBarType.defaultOrder,
     onSelected: (value, setState) {
       GStorage.setting
           .put(SettingBoxKey.defaultHomePage, value.index)
@@ -380,7 +380,7 @@ List<SettingsModel> get styleSettings => [
       '/barSetting',
       arguments: {
         'key': SettingBoxKey.navBarSort,
-        'defaultBars': NavigationBarType.values,
+        'defaultBars': NavigationBarType.defaultOrder,
         'title': 'Navbar',
       },
     ),
