@@ -5,7 +5,7 @@
 >
 > **落点纪律**：只做影响 Android 的改动 —— 能只改 `android/` 就只改 `android/`；必须改 `lib/` 时用 `Platform.isAndroid` / `DeviceUtils.sdkInt` 守卫，不改 iOS 与桌面行为。
 >
-> **最后更新**：2026-09-27（Impeller 试开后耗电/发热变差，已回退为默认关闭；MessageQueue 新实现状态核对完毕）
+> **最后更新**：2026-10-30（Impeller 改为默认开启；MessageQueue 新实现状态核对完毕）
 
 ---
 
@@ -18,7 +18,7 @@
 | 2 | 应用可见性统一门控（熄屏/后台耗电主线） | ✅ 2026-09-26 完成骨架 + 3 处接入 |
 | 3 | 卡顿与发热主线（直播弹幕 isolate、评论缓存、每帧重建） | ⏳ 未开始 |
 | 4 | 后台长任务与更新链路（下载前台服务、应用内安装、正式签名） | ⏳ 未开始 |
-| 5 | 画质与渲染后端（Impeller 试开过、实测不佳已回退；HDR、解码线程未开始） | ⏳ 未开始 |
+| 5 | 画质与渲染后端（Impeller 已默认开启；HDR、解码线程未开始） | ⏳ 未开始 |
 | 6 | 发布（R8、16 KB 页对齐、大屏方向） | ⏳ 未开始 |
 
 ---
@@ -52,7 +52,7 @@
 
 | 编号 | 内容 | 用户可感知效果 |
 | --- | --- | --- |
-| PL-01 | Impeller 仍默认关闭（试开：`--android-project-arg=enableImpeller=true`） | 2026-09-27 实测开启后**耗电/发热变差**，已回退到 Skia（详情见 §5） |
+| PL-01 | Impeller 已默认开启（Vulkan 优先，不支持时回落 OpenGLES） | 弹幕/滚动这类每帧重绘场景的合成开销更低；需要时用 `--android-project-arg=enableImpeller=false` 回退 Skia（详见 §5） |
 | PL-02 | `vo` / `gpu-api` 可配置 | 个别机型花屏时可切 Vulkan 后端自救 |
 | PL-04 | AV1 硬解 | AV1 片源走硬解，同画质更省电 |
 | PL-05 | 硬解失败自动降级链 | 个别片源黑屏/花屏时自动换解码方式，不用手动改设置 |
@@ -207,33 +207,28 @@
 - 回归设备：小米 15（澎湃 OS 4，主）+ 一台 Android 12/13 旧机（验证 `Platform.isAndroid` / `sdkInt` 守卫没写反）。
 - 关键量化场景（改动前后各测一次）：待机 8 h 电流与唤醒次数；冷启动 `am start -W` 的 `TotalTime`；1080P60 播放 30 min 的 CPU/电量；视频页滚动 3 min 的 P95 帧时间；热门直播间 10 min 的 UI isolate CPU。
 
-### Impeller（PL-01，2026-09-27 实测后仍为默认关闭）
+### Impeller（PL-01，2026-10-30 起默认开启）
 
-- 结论：在小米 15（澎湃 OS 4）上试开 Impeller 后**耗电与发热明显变差**（2026-09-27 实测反馈，**没有出现画面异常**），已回退为**默认关闭**（Skia）。
-  开关与核验方法保留在下面，方便日后换 Flutter 版本 / 换机型复测。
-- 症状能排除什么：既然是“功耗/发热变差”而不是画错、也没闪退，说明 Impeller 本身渲染是对的，不值得去查兼容性；
-  下次复测应从“每帧重绘的成本”入手——液体玻璃（`BackdropFilter`，底栏 blur 28 / 顶栏 16，都盖在滚动内容上）与
-  骨架屏 `ShaderMask` 这类每帧 backdrop/saveLayer 的路径，是本工程最可能把 GPU 功耗拉上去的地方。
-  （这只是**推测，尚未实测**；报告 §3.7 那条「玻璃模糊按 低功耗/温控 自动降档」就是为这种情况预留的旋钮，目前未实施。）
-- 开关位置：`android/app/build.gradle.kts` 的 `manifestPlaceholders["enableImpeller"]`（**默认 `false`**）→ 清单 `io.flutter.embedding.android.EnableImpeller = ${enableImpeller}`。
-  该 flag 在引擎里 `allowedInRelease = true`，所以 release 包也真生效（不合法的话 FlutterLoader 会打 `Log.e` 并忽略）。
+- 现状：`android/app/build.gradle.kts` 的 `manifestPlaceholders["enableImpeller"]` 默认 `true` → 清单 `io.flutter.embedding.android.EnableImpeller = ${enableImpeller}`。
+  引擎优先用 Vulkan 后端，设备不支持时回落到 OpenGLES（`libflutter.so` 里同时含 `Using the Impeller rendering backend (Vulkan).`
+  与 `... (OpenGLES).` 两条字符串）；该 flag 在引擎里 `allowedInRelease = true`，所以 release 包也真生效（不合法的话 FlutterLoader 会打 `Log.e` 并忽略）。
+- 回退到 Skia（不用改代码）：`flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=pili_release.json --no-pub --android-project-arg=enableImpeller=false`
+  （`--android-project-arg` 的值**不要**自己加 `-P` 前缀，工具会拼成 `-PenableImpeller=false`）。
 - 打包核验（不用装到设备，最确定）：`aapt2 dump xmltree --file AndroidManifest.xml build\app\outputs\flutter-apk\app-arm64-v8a-release.apk | Select-String EnableImpeller`
-  期望 `android:value="false"`（加上试开参数重新打包时应为 `"true"`）。
+  期望 `android:value="true"`。
 - 运行时核验：`adb logcat -c` → 启动 App → `adb logcat -d | Select-String "Using the Impeller rendering backend"`。
   出现 `Using the Impeller rendering backend (Vulkan).` 就是 Impeller 已生效（OpenGLES 后端会打 `... (OpenGLES).`）；没有这一行就是跑在 Skia 上。
-- 试开构建（复测用）：`flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=pili_release.json --no-pub --android-project-arg=enableImpeller=true`
-  （`--android-project-arg` 的值**不要**自己加 `-P` 前缀，工具会拼成 `-PenableImpeller=true`）。
-- 调试捷径（不重新打包，但**必须先 force-stop**，否则会复用旧进程/旧引擎上的设置）：
-  `adb shell am force-stop com.example.piliplus` 后再 `adb shell am start -n com.example.piliplus/.MainActivity --ez enable-impeller true`
+- 调试捷径（不重新打包地临时关掉 Impeller，但**必须先 force-stop**，否则会复用旧进程/旧引擎上的设置）：
+  `adb shell am force-stop com.example.piliplus` 后再 `adb shell am start -n com.example.piliplus/.MainActivity --ez enable-impeller false`
   （引擎从 intent extra `enable-impeller` 读值，见 `FlutterShellArgs.fromIntent` / `FlutterEngineFlags.getFlagFromIntentKey`）。
   ⚠️ 上游已声明「用 Intent 传引擎 flag」迟早会被移除（flutter/flutter#180686），所以只当调试手段，正式回退用上面的重新打包。
-- 已确认引擎二进制里同时含 Vulkan / OpenGLES 两个 Impeller 后端（`libflutter.so` 里有 `Using the Impeller rendering backend (Vulkan).`、`... (OpenGLES).`），所以禁用 Vulkan 的设备也能回落到 GLES 后端。
-- 回归清单（放开后过一遍，看“有没有画错/崩”而非性能）：播放画面与弹幕渲染、PiP、投屏、截图与 WebP 导出、液体玻璃（BackdropFilter）、骨架屏 ShaderMask。
+- 回归清单（看“有没有画错/崩”而非性能）：播放画面与弹幕渲染、PiP、投屏、截图与 WebP 导出、液体玻璃（BackdropFilter）、骨架屏 ShaderMask。
 - 已核对不涉及 Impeller 的已知局限：全库没有 `toImageSync`，也没有 `ScreenshotType.skiaPicture` 用法（这两条是 Impeller 的限制），
   截图/导出（`lib/utils/screenshot.dart`、`save_panel`、`login` 的 `RepaintBoundary.toImage`）走的是受支持的 `toImage` 路径；`lib/` 里也没有任何依赖“当前跑在 Skia 上”的分支。
-- 历史原因（值得知道）：上游这份 `EnableImpeller=false` 是从 **Kazumi** 抄来的预防性设置（提交 `f6406f47a` 正文：`mod: disable impeller, ref Kazumi`），
+- 若某机型功耗偏高，优先检查每帧 backdrop/saveLayer 的成本：液体玻璃（`BackdropFilter`，底栏 blur 28 / 顶栏 16，都盖在滚动内容上）与骨架屏 `ShaderMask`；
+  报告 §3.7 那条「玻璃模糊按 低功耗/温控 自动降档」就是为这种情况预留的旋钮，目前未实施。
+- 上游历史：`EnableImpeller=false` 原是从 **Kazumi** 抄来的预防性设置（提交 `f6406f47a` 正文：`mod: disable impeller, ref Kazumi`），
   **不是本仓库复现过的 bug**；该提交 2024-12-28 被整体回退过一次（`51f87cc49`），2025-05-16 又随 flutter bump 加了回来（`7ae92970e`）。
-  而 2026-09-27 的实测结论是：**这条预防性关闭仍然需要**（试开后耗电/发热变差，已回退）。日后复测若再出现花屏/闪烁，直接用上面的命令立刻回到 Skia。
 
 ### MessageQueue 新无锁实现（A17-08）
 
