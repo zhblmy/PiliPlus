@@ -29,14 +29,16 @@ const _kMinCellWidth = 56.0;
 /// 静止时气泡四周与底栏之间的留白：上下左右必须**一样**，
 /// 气泡两端的圆弧才会和底栏同心（弧度一致）。
 ///
-/// 底栏圆角 = 55/2 = 27.5，气泡高 = 55 - 2×5 = 45、圆角 = 22.5，
-/// 差值正好是 5 —— 两条弧就是同心的。
-const _kIndicatorRestInset = 5.0;
+/// 底栏圆角 = 55/2 = 27.5，气泡高 = 55 - 2×3 = 49、圆角 = 24.5，
+/// 差值正好是 3 —— 两条弧就是同心的。
+const _kIndicatorRestInset = 3.0;
 
 /// [ _kIndicatorRestInset] 换算到「图标行矩形」里的值。
 ///
 /// 图标行外面还包了一层 [ _kIndicatorPadding]（4），气泡图层画在那一层里，
-/// 所以横向留白要用 `restInset - padding`，才不会变成 4+5=9 而上下只有 5。
+/// 所以横向留白要用 `restInset - padding`，才不会变成 4+3=7 而上下只有 3。
+/// 留白比内边距还小时该值为负（3 − 4 = −1），气泡靠 [Clip.none] 溢出那一层，
+/// 视觉上仍然是距底栏 3dp。
 const _kIndicatorInnerInset = _kIndicatorRestInset - _kIndicatorPaddingInt;
 
 /// 静止时气泡的尺寸（比一格略小、比栏略矮）
@@ -59,8 +61,8 @@ const _kPressGrow = 20.0;
 const _kSlideCurve = Cubic(0.35, 0.0, 0.20, 1.0);
 
 /// 按下时气泡「滑到被按的那一格」的时长。
-/// 比切换选中略快一点（按下要立刻有反馈），但依旧能看清缓动过程。
-const _kPressSlideDuration = Duration(milliseconds: 240);
+/// 目前比切换选中（310ms）略长一点，缓动过程更从容、看得更清楚。
+const _kPressSlideDuration = Duration(milliseconds: 320);
 
 /// 底栏玻璃的着色浓度：**越小越透**（下层内容越清楚，糊得也更明显）。
 ///
