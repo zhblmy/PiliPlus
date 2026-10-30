@@ -481,37 +481,7 @@ List<SettingsModel> get extraSettings => [
     },
     leading: const Icon(Icons.vibration_outlined),
     title: '震动反馈',
-    subtitle: '点击/点赞/切底栏等操作的振动；强度见下一项',
-  ),
-  NormalModel(
-    title: '震动强度',
-    leading: const Icon(Icons.tune_rounded),
-    getSubtitle: () =>
-        '当前：${kVibrateLevelNames[Pref.vibrateStrength.clamp(0, kVibrateLevelNames.length - 1)]}'
-        '（开启「震动反馈」后生效，小米/澎湃上建议选「强」）',
-    onTap: (context, setState) async {
-      final res = await showDialog<int>(
-        context: context,
-        builder: (context) => SelectDialog<int>(
-          title: '震动强度',
-          value: Pref.vibrateStrength,
-          values: [
-            for (int i = 0; i < kVibrateLevelNames.length; i++)
-              (
-                i,
-                '${kVibrateLevelNames[i]}'
-                    '（${kVibrateLevels[i].$1}ms / 振幅${kVibrateLevels[i].$2}）',
-              ),
-          ],
-        ),
-      );
-      if (res != null) {
-        await GStorage.setting.put(SettingBoxKey.vibrateStrength, res);
-        // 立刻震一下试手感（此时开关可能是关的，所以用 vibrateNow）
-        vibrateNow();
-        setState();
-      }
-    },
+    subtitle: '请确定手机设置中已开启震动反馈',
   ),
   const SwitchModel(
     title: '大家都在搜',
