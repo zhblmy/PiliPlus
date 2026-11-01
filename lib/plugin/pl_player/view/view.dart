@@ -144,6 +144,11 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
 
   bool _pauseDueToPauseUponEnteringBackgroundMode = false;
 
+  /// route 的 animation 初始状态就是 `dismissed`（push 首帧也是），
+  /// 所以只有它真的开始离开过（`reverse` / 已 `completed`），
+  /// 之后的 `dismissed` 才能算「离开」。
+  bool _routeStartedLeaving = false;
+
   StreamSubscription? _brightnessListener;
   void _onBrightnessChanged(double value) {
     if (mounted && _gestureType != .left) {
@@ -1998,7 +2003,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
   }
 
   Widget get _videoWidget {
-    return Container(
+    final content = Container(
       clipBehavior: .none,
       width: maxWidth,
       height: maxHeight,
@@ -2052,7 +2057,65 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         ),
       ),
     );
+
+    // 返回转场期间不绘制视频纹理层（Texture），改用纯底色占位。
+    // 实测（小米15 / 120Hz / Impeller Vulkan）：视频页在转场中每帧都要整页重新
+    // 光栅化，只要这一层里含视频纹理，单帧 raster p50 就从 ~3.6ms 涨到 ~26.8ms，
+    // 返回动画掉到 10fps 上下（1 秒内只有 8~13 帧；竖版视频更严重，纹理面积更大）。
+    // 不绘制纹理后同一路径实测 raster p50 降到 ~3.62ms、1 秒内帧数回到 51。
+    //
+    // 不能靠 RepaintBoundary 解决：它缓存的是绘制指令而非光栅化结果，视频层外面
+    // 本来就已经有一个 RepaintBoundary，纹理每帧仍要被重新采样合成。
+    // 暂停播放同样无效（实测 24.34ms）——省掉的只是"上传新帧"，不是"采样合成"。
+    //
+    // 两个 Offstage 常驻、只切 offstage 属性：结构稳定，不会每帧重建子树。
+    // Offstage 在 offstage 为 true 时**仍然会布局** child（只是不绘制、不命中
+    // 测试），所以视频的 surface 尺寸不会被改变，返回后再进同一视频不受影响。
+    // 只处理返回方向，进入（forward）时维持正常显示。
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null) return content;
+    final placeholder = _transitionPlaceholder();
+    return AnimatedBuilder(
+      animation: animation,
+      child: content,
+      builder: (context, child) {
+        final status = animation.status;
+        if (status == AnimationStatus.completed ||
+            status == AnimationStatus.reverse) {
+          _routeStartedLeaving = true;
+        }
+        // dismissed 也算「离开」：pop 收尾时 status 会从 reverse 变成 dismissed，
+        // 不加这半句会在页面移除前闪一帧视频画面。
+        // 但 animation 初始状态同样是 dismissed，靠 _routeStartedLeaving 兜底，
+        // 否则 push 首帧、以及 push 后极快 pop 都会闪一下底色。
+        final leaving =
+            status == AnimationStatus.reverse ||
+            (_routeStartedLeaving && status == AnimationStatus.dismissed);
+        // clipBehavior 与 content 里 Container(clipBehavior: .none) 保持一致：
+        // 两个子节点都是精确尺寸，本就不该裁剪。
+        return Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
+          children: [
+            Offstage(offstage: leaving, child: child),
+            Offstage(offstage: !leaving, child: placeholder),
+          ],
+        );
+      },
+    );
   }
+
+  /// 返回转场期间顶替视频画面的纯底色占位。
+  ///
+  /// 必须带固定尺寸：`_videoWidget` 是播放器外壳 Stack 的第一个非定位子节点，
+  /// 它决定整个播放器区域的尺寸；而 `Offstage(offstage: true)` 自己的尺寸是
+  /// `constraints.smallest`（在 loose 约束下就是 0），占位若没有尺寸，
+  /// 转场时内层 Stack 会塌成 0 → 播放器区域跳变。
+  Widget _transitionPlaceholder() => SizedBox(
+    width: maxWidth,
+    height: maxHeight,
+    child: ColoredBox(color: widget.fill),
+  );
 
   Future<void> _screenshotWebp() async {
     final videoInfo = videoDetailController.data;
