@@ -27,6 +27,7 @@ class _DLNAPageState extends State<DLNAPage> {
   Timer? _timer;
   bool _isSearching = false;
   bool _permissionDenied = false;
+  String? _searchError;
   DLNADevice? _lastDevice;
   String? _lastDeviceKey;
 
@@ -54,6 +55,7 @@ class _DLNAPageState extends State<DLNAPage> {
     if (_isSearching) return;
     // 先置位：下面的权限申请会 await（可能弹系统对话框），期间不允许被重复触发
     _isSearching = true;
+    _searchError = null;
     if (!isInit && mounted) {
       setState(() {
         _permissionDenied = false;
@@ -72,21 +74,27 @@ class _DLNAPageState extends State<DLNAPage> {
       });
       return;
     }
-    final deviceManager = await _searcher.start();
-    if (!mounted) {
-      return;
-    }
-    _timer = Timer(const Duration(seconds: 20), _searcher.stop);
-    await for (final deviceList in deviceManager.devices.stream) {
-      if (mounted) {
-        _deviceList.addAll(deviceList);
-        setState(() {});
+    try {
+      final deviceManager = await _searcher.start();
+      if (!mounted) return;
+      _timer = Timer(const Duration(seconds: 20), _searcher.stop);
+      await for (final deviceList in deviceManager.devices.stream) {
+        if (mounted) {
+          _deviceList.addAll(deviceList);
+          setState(() {});
+        }
       }
-    }
-    if (mounted) {
-      setState(() {
-        _isSearching = false;
-      });
+    } catch (_) {
+      _searchError = '搜索设备失败，请检查网络后重试';
+    } finally {
+      _timer?.cancel();
+      _timer = null;
+      _searcher.stop();
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
     }
   }
 
@@ -130,7 +138,7 @@ class _DLNAPageState extends State<DLNAPage> {
         errMsg: _permissionDenied
             ? '未授予「本地网络」权限，无法搜索局域网内的投屏设备\n'
                   '请在系统设置中允许「本地网络」后点击搜索重试'
-            : '没有设备',
+            : _searchError ?? '没有设备',
         btnText: _permissionDenied ? '打开设置' : null,
         onReload: _permissionDenied ? _openAppSettingsPage : _onSearch,
       );

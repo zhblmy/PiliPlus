@@ -5,7 +5,7 @@ import 'package:get/get.dart';
 abstract class CommonListController<R, T> extends CommonController<R, T> {
   int page = 1;
   bool isEnd = false;
-  bool? hasFooter;
+  bool get hasFooter => false;
 
   @override
   Rx<LoadingState<List<T>?>> loadingState =

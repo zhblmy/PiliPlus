@@ -1,7 +1,6 @@
 import 'dart:math' show max, min;
 
-import 'package:PiliPlus/models/common/video/audio_quality.dart';
-import 'package:PiliPlus/models/common/video/video_quality.dart';
+import 'package:PiliPlus/models/common/video/base_quality.dart';
 import 'package:PiliPlus/models_new/sponsor_block/segment_item.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -65,8 +64,8 @@ class PlayUrlModel {
     if (video == null || video.isEmpty) return preferredQuality;
     final curHighestVideoQa = video.first.quality.code;
     if (acceptQuality case final qualitys?
-        when preferredQuality <= curHighestVideoQa) {
-      return qualitys.findClosestTarget((e) => e <= preferredQuality, max);
+        when qualitys.isNotEmpty && preferredQuality <= curHighestVideoQa) {
+      return qualitys.findTargetMedia((e) => e, preferredQuality);
     } else {
       return curHighestVideoQa;
     }
@@ -109,11 +108,13 @@ class PlayUrlModel {
     videoCodecid = json['video_codecid'];
     seekParam = json['seek_param'];
     seekType = json['seek_type'];
-    dash = json['dash'] != null ? Dash.fromJson(json['dash']) : null;
-    durl = (json['durl'] as List?)?.map<Durl>((e) => Durl.fromJson(e)).toList();
     supportFormats = (json['support_formats'] as List?)
         ?.map<FormatItem>((e) => FormatItem.fromJson(e))
         .toList();
+    dash = json['dash'] != null
+        ? Dash.fromJson(json['dash'], supportFormats)
+        : null;
+    durl = (json['durl'] as List?)?.map<Durl>((e) => Durl.fromJson(e)).toList();
     volume = json['volume'] == null ? null : Volume.fromJson(json['volume']);
     lastPlayTime = json['last_play_time'];
     lastPlayCid = json['last_play_cid'];
@@ -205,11 +206,11 @@ class Dash {
   List<VideoItem>? video;
   List<AudioItem>? audio;
 
-  Dash.fromJson(Map<String, dynamic> json) {
+  Dash.fromJson(Map<String, dynamic> json, List<FormatItem>? supportFormats) {
     duration = json['duration'];
     minBufferTime = json['minBufferTime'];
     video = (json['video'] as List?)
-        ?.map<VideoItem>((e) => VideoItem.fromJson(e))
+        ?.map<VideoItem>((e) => VideoItem.fromJson(e, supportFormats))
         .toList();
     final audio = [
       if (json['flac']?['audio'] case Map<String, dynamic> flac)
@@ -334,8 +335,9 @@ class VideoItem extends BaseItem {
     required this.quality,
   });
 
-  VideoItem.fromJson(Map<String, dynamic> json) : super.fromJson(json) {
-    quality = VideoQuality.fromCode(json['id']);
+  VideoItem.fromJson(Map<String, dynamic> json, List<FormatItem>? formats)
+    : super.fromJson(json) {
+    quality = VideoQuality.fromFormat(json['id'], formats);
   }
 }
 

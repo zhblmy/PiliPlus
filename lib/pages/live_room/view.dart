@@ -70,6 +70,7 @@ class LiveRoomPage extends StatefulWidget {
 class _LiveRoomPageState extends State<LiveRoomPage>
     with WidgetsBindingObserver, RouteAware, RouteAwareMixin {
   late final fullScreenSCWidth = Pref.fullScreenSCWidth;
+  PlayOwner get _playOwner => (tag: heroTag, type: null);
   final String heroTag = Utils.generateRandomString(6);
   late final LiveRoomController _liveRoomController;
   late final PlPlayerController plPlayerController;
@@ -90,7 +91,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     );
     plPlayerController = _liveRoomController.plPlayerController
       ..addStatusLister(playerListener);
-    PlPlayerController.setPlayCallBack(plPlayerController.play);
+    _setPlayCallBack();
     if (plPlayerController.removeSafeArea) {
       hideSystemBar();
     }
@@ -100,6 +101,13 @@ class _LiveRoomPageState extends State<LiveRoomPage>
       this,
       onPause: _liveRoomController.closeLiveMsg,
       onResume: _onAppVisible,
+    );
+  }
+
+  void _setPlayCallBack() {
+    PlPlayerController.setPlayCallBack(
+      plPlayerController.play,
+      playOwner: _playOwner,
     );
   }
 
@@ -122,6 +130,17 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     plPlayerController.screenRatio = maxHeight / maxWidth;
   }
 
+  void _onPushPopupRoute() {
+    _liveRoomController.isPlaying = plPlayerController.playerStatus.isPlaying;
+  }
+
+  void _onPopPopupRoute() {
+    if (!mounted) return;
+    if (PlPlayerController.playOwner != _playOwner) {
+      _resumeOnPopNext();
+    }
+  }
+
   @override
   void didPopNext() {
     addObserverMobile(this);
@@ -139,7 +158,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     }
     plPlayerController.danmakuController =
         _liveRoomController.danmakuController;
-    PlPlayerController.setPlayCallBack(plPlayerController.play);
+    _setPlayCallBack();
     _liveRoomController.startLiveTimer();
     if (plPlayerController.playerStatus.isPlaying &&
         plPlayerController.cid == null) {
@@ -276,7 +295,9 @@ class _LiveRoomPageState extends State<LiveRoomPage>
     Alignment alignment = Alignment.center,
     bool needDm = true,
   }) {
-    if (!isFullScreen && !plPlayerController.isDesktopPip) {
+    if (_liveRoomController.enableFSSC &&
+        !isFullScreen &&
+        !plPlayerController.isDesktopPip) {
       _liveRoomController.fsSC.value = null;
     }
     _liveRoomController.isFullScreen = isFullScreen;
@@ -322,6 +343,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
       },
     );
     if (_liveRoomController.showSuperChat &&
+        _liveRoomController.enableFSSC &&
         (isFullScreen || plPlayerController.isDesktopPip)) {
       player = Stack(
         clipBehavior: Clip.none,
@@ -362,7 +384,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
                 return const SizedBox.shrink();
               }
               try {
-                return ExtraHitTestStack(
+                Widget child = ExtraHitTestStack(
                   key: ValueKey(item.id),
                   clipBehavior: Clip.none,
                   children: [
@@ -385,6 +407,20 @@ class _LiveRoomPageState extends State<LiveRoomPage>
                     ),
                   ],
                 );
+                if (_liveRoomController.fsSCOpacity != 1.0) {
+                  child = Opacity(
+                    opacity: _liveRoomController.fsSCOpacity,
+                    child: child,
+                  );
+                }
+                if (_liveRoomController.fsSCScale != 1.0) {
+                  child = Transform.scale(
+                    alignment: .bottomLeft,
+                    scale: _liveRoomController.fsSCScale,
+                    child: child,
+                  );
+                }
+                return child;
               } catch (_) {
                 if (kDebugMode) rethrow;
                 return const SizedBox.shrink();
@@ -548,6 +584,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
 
   void _showRank() {
     if (_liveRoomController.ruid case final ruid?) {
+      _onPushPopupRoute();
       final heightFactor = PlatformUtils.isMobile && !isPortrait ? 1.0 : 0.7;
       showModalBottomSheet(
         context: context,
@@ -563,7 +600,7 @@ class _LiveRoomPageState extends State<LiveRoomPage>
             roomId: _liveRoomController.roomId,
           ),
         ),
-      );
+      ).whenComplete(_onPopPopupRoute);
     }
   }
 

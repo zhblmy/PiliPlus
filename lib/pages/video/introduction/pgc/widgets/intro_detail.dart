@@ -49,7 +49,7 @@ class _IntroDetailState extends State<PgcIntroPanel>
   }
 
   @override
-  Widget buildPage(ThemeData theme) {
+  Widget buildPage() {
     return Material(
       color: theme.colorScheme.surface,
       child: Column(
@@ -97,7 +97,7 @@ class _IntroDetailState extends State<PgcIntroPanel>
             ],
           ),
           Expanded(
-            child: enableSlide ? slideList(theme) : buildList(theme),
+            child: enableSlide ? slideList() : buildList(),
           ),
         ],
       ),
@@ -105,13 +105,13 @@ class _IntroDetailState extends State<PgcIntroPanel>
   }
 
   @override
-  Widget buildList(ThemeData theme) {
+  Widget buildList() {
     return TabBarView(
       controller: _tabController,
       physics: tabBarScrollPhysics,
       horizontalDragGestureRecognizer: horizontalDragGestureRecognizer,
       children: [
-        KeepAliveWrapper(child: _buildInfo(theme)),
+        KeepAliveWrapper(child: _buildInfo()),
         PgcReviewPage(
           name: widget.item.title!,
           mediaId: widget.item.mediaId,
@@ -120,7 +120,7 @@ class _IntroDetailState extends State<PgcIntroPanel>
     );
   }
 
-  Widget _buildInfo(ThemeData theme) {
+  Widget _buildInfo() {
     final TextStyle smallTitle = TextStyle(
       fontSize: 12,
       color: theme.colorScheme.onSurface,
