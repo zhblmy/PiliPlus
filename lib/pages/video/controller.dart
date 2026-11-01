@@ -996,35 +996,14 @@ class VideoDetailController extends GetxController
       }
 
       final cacheVideoQa = plPlayerController.cacheVideoQa!;
-      final targetVideoQa = data.findAvailableVideoQuality(cacheVideoQa);
-      currentVideoQa.value = VideoQuality.fromCode(targetVideoQa);
-
-      /// 优先顺序 设置中指定解码格式 -> 当前可选的首个解码格式
-      final supportFormats = data.supportFormats;
-
-      // 根据画质选编码格式
-      currentDecodeFormats = supportFormats == null
-          ? (preferCodecs.isNotEmpty
-                ? preferCodecs.first
-                : VideoDecodeFormatType.AVC)
-          : VideoUtils.selectCodec(
-              supportFormats
-                      .firstWhere(
-                        (e) => e.quality == targetVideoQa,
-                        orElse: () => supportFormats.first,
-                      )
-                      .codecs ??
-                  const [],
-              preferCodecs,
-            );
-
-      /// 取出符合当前画质的videoList
-      final List<VideoItem> videosList =
-          data.dash?.video
-              ?.where((e) => e.quality.code == targetVideoQa)
-              .toList() ??
-          const [];
-      if (videosList.isEmpty) {
+      final videoTarget = VideoUtils.findTargetVideo(
+        data.dash?.video,
+        cacheVideoQa,
+        data.acceptQuality,
+        data.supportFormats,
+        preferCodecs,
+      );
+      if (videoTarget == null) {
         SmartDialog.showToast('视频资源不存在');
         _autoPlay.value = false;
         videoState.value = false;
@@ -1033,15 +1012,10 @@ class VideoDetailController extends GetxController
         }
         return;
       }
-
-      /// 取出符合当前解码格式的videoItem
-      firstVideo = videosList.firstWhere(
-        (e) {
-          final c = e.codecs;
-          return c != null && currentDecodeFormats.codes.any(c.startsWith);
-        },
-        orElse: () => videosList.first,
-      );
+      final (targetQuality, _, targetDecode, targetVideo) = videoTarget;
+      firstVideo = targetVideo;
+      currentDecodeFormats = targetDecode;
+      currentVideoQa.value = VideoQuality.fromCode(targetQuality);
       _setVideoHeight();
       videoUrl = VideoUtils.getCdnUrl(firstVideo.playUrls);
 

@@ -57,25 +57,6 @@ class PlayUrlModel {
   Language? language;
   List<SegmentItemModel>? clipInfoList;
 
-  /// 按 [acceptQuality] 与服务端实际可用的最高画质挑出目标画质。
-  ///
-  /// 上游已把同类逻辑收进 `VideoUtils.findTargetVideo`（本方法在上游被删除），
-  /// 但那边缺少 dash / 码流为空的兜底，这里保留一版带空值防护的实现，
-  /// 供起播与下载复用。
-  int findAvailableVideoQuality(int preferredQuality) {
-    final video = dash?.video;
-    // 版权受限 / 试看失败时 dash 里可能没有码流，交给调用方按「无资源」处理，
-    // 不要在这里对空列表取 first
-    if (video == null || video.isEmpty) return preferredQuality;
-    final curHighestVideoQa = video.first.quality.code;
-    if (acceptQuality case final qualitys?
-        when qualitys.isNotEmpty && preferredQuality <= curHighestVideoQa) {
-      return qualitys.findTargetMedia((e) => e, preferredQuality);
-    } else {
-      return curHighestVideoQa;
-    }
-  }
-
   @pragma('vm:notify-debugger-on-exception')
   int get missingVideoQualityBelowHighest {
     int best = -1;

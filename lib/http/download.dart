@@ -43,47 +43,32 @@ abstract final class DownloadHttp {
       entry.segments = response.clipInfoList;
 
       if (dash != null) {
-        final targetVideoQa = response.findAvailableVideoQuality(
+        final videoTarget = VideoUtils.findTargetVideo(
+          dash.video,
           entry.preferedVideoQuality,
-        );
-
-        /// 优先顺序 设置中指定解码格式 -> 当前可选的首个解码格式
-        final supportFormats = response.supportFormats;
-        // 根据画质选编码格式
-        final targetSupportFormats =
-            supportFormats?.firstWhereOrNull(
-              (e) => e.quality == targetVideoQa,
-            ) ??
-            supportFormats?.firstOrNull;
-
-        final currentDecodeFormats = VideoUtils.selectCodec(
-          targetSupportFormats?.codecs ?? const [],
+          response.acceptQuality,
+          response.supportFormats,
           Pref.preferCodecs,
         );
-
-        entry
-          ..typeTag = targetVideoQa.toString()
-          ..videoQuality = targetVideoQa
-          ..preferedVideoQuality = targetVideoQa
-          ..qualityPithyDescription =
-              targetSupportFormats?.newDesc ??
-              VideoQuality.fromCode(targetVideoQa).desc;
-
-        /// 取出符合当前画质的videoList
-        final videosList = dash.video!
-            .where((e) => e.quality.code == targetVideoQa)
-            .toList();
-
-        /// 取出符合当前解码格式的videoItem
-        final videoDash = videosList.firstWhere(
-          (e) {
-            final c = e.codecs;
-            return c != null && currentDecodeFormats.codes.any(c.startsWith);
-          },
-          orElse: () => videosList.first,
-        );
+        if (videoTarget == null) {
+          throw '视频资源不存在';
+        }
+        final (
+          int targetQuality,
+          FormatItem? targetFormat,
+          _,
+          VideoItem videoDash,
+        ) = videoTarget;
 
         final videoUrl = VideoUtils.getCdnUrl(videoDash.playUrls);
+
+        entry
+          ..typeTag = targetQuality.toString()
+          ..videoQuality = targetQuality
+          ..preferedVideoQuality = targetQuality
+          ..qualityPithyDescription =
+              targetFormat?.displayDesc ??
+              VideoQuality.fromCode(targetQuality).shortDesc;
 
         final Type2File videoFile = Type2File(
           id: videoDash.id,

@@ -6,6 +6,7 @@ import 'package:PiliPlus/models/video/play/url.dart'
 import 'package:PiliPlus/models_new/live/live_room_play_info/codec.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
 abstract final class VideoUtils {
@@ -156,20 +157,28 @@ abstract final class VideoUtils {
     return videoList.findTargetMedia((e) => e.id, preferQuality).quality.code;
   }
 
+  /// 按 [preferQuality] 与 `accept_quality` 挑出可播放的码流。
+  ///
+  /// 画质选择规则：`accept_quality` 非空时在其中取 ≤ [preferQuality] 的最接近值；
+  /// 为空（或缺失）时退回到「实际可用码流里 ≤ [preferQuality] 的最接近画质」，
+  /// 都比 [preferQuality] 高才取最高的可用画质。
+  ///
+  /// dash / support_formats / codecs 缺失的响应（版权受限、试看失败、旧版本接口）
+  /// 不抛异常，逐个降级；确实没有可播码流时返回 null，由调用方按「无资源」处理。
   static (
     int targetQuality,
-    FormatItem targetFormat,
+    FormatItem? targetFormat,
     VideoDecodeFormatType targetDecode,
     VideoItem targetVideo,
-  )
+  )?
   findTargetVideo(
-    List<VideoItem> videoList,
+    List<VideoItem>? videoList,
     int preferQuality,
     List<int>? acceptQuality,
-    List<FormatItem> supportFormats,
+    List<FormatItem>? supportFormats,
     List<VideoDecodeFormatType> preferCodecs,
   ) {
-    assert(videoList.isNotEmpty);
+    if (videoList == null || videoList.isEmpty) return null;
 
     final targetQuality = _findAvailableVideoQuality(
       videoList,
@@ -177,22 +186,25 @@ abstract final class VideoUtils {
       preferQuality,
     );
 
-    final targetFormat = supportFormats.firstWhere(
-      (e) => e.quality == targetQuality,
-      orElse: () => supportFormats.first,
-    );
-
-    final targetDecode = VideoUtils.selectCodec(
-      targetFormat.codecs!,
-      preferCodecs,
-    );
-
     final targetQaVideoList = videoList
         .where((e) => e.id == targetQuality)
         .toList();
+    if (targetQaVideoList.isEmpty) return null;
+
+    final targetFormat =
+        supportFormats?.firstWhereOrNull((e) => e.quality == targetQuality) ??
+        supportFormats?.firstOrNull;
+
+    final targetDecode = VideoUtils.selectCodec(
+      targetFormat?.codecs ?? const [],
+      preferCodecs,
+    );
 
     final targetVideo = targetQaVideoList.firstWhere(
-      (e) => targetDecode.codes.any(e.codecs!.startsWith),
+      (e) {
+        final c = e.codecs;
+        return c != null && targetDecode.codes.any(c.startsWith);
+      },
       orElse: () => targetQaVideoList.first,
     );
 

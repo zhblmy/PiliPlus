@@ -34,7 +34,7 @@ void main() {
     final preferQa = VideoQuality.high1080.code;
     final (
       int targetQuality,
-      FormatItem targetFormat,
+      FormatItem? targetFormat,
       VideoDecodeFormatType targetDecode,
       VideoItem targetVideo,
     ) = VideoUtils.findTargetVideo(
@@ -43,7 +43,7 @@ void main() {
       playUrl.acceptQuality,
       playUrl.supportFormats!,
       [.AV1],
-    );
+    )!;
     expect(targetQuality, preferQa);
   });
 
@@ -55,7 +55,7 @@ void main() {
     final preferQa = VideoQuality.high1080plus.code;
     final (
       int targetQuality,
-      FormatItem targetFormat,
+      FormatItem? targetFormat,
       VideoDecodeFormatType targetDecode,
       VideoItem targetVideo,
     ) = VideoUtils.findTargetVideo(
@@ -64,7 +64,7 @@ void main() {
       playUrl.acceptQuality,
       playUrl.supportFormats!,
       [.AV1],
-    );
+    )!;
     expect(targetQuality, VideoQuality.superResolution.code);
   });
 
@@ -78,7 +78,7 @@ void main() {
     final preferQa = VideoQuality.speed240.code;
     final (
       int targetQuality,
-      FormatItem targetFormat,
+      FormatItem? targetFormat,
       VideoDecodeFormatType targetDecode,
       VideoItem targetVideo,
     ) = VideoUtils.findTargetVideo(
@@ -87,7 +87,7 @@ void main() {
       playUrl.acceptQuality,
       playUrl.supportFormats!,
       [.AV1],
-    );
+    )!;
     expect(targetQuality, VideoQuality.clear480.code);
   });
 }
