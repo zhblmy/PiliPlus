@@ -926,9 +926,9 @@ abstract final class Pref {
       'cache': 'yes',
       'demuxer-max-bytes':
           (effectiveSizeMb *
-                 0x100000 *
-                 MemoryBudget.bufferScale *
-                 DeviceState.bufferScale)
+                  0x100000 *
+                  MemoryBudget.bufferScale *
+                  DeviceState.bufferScale)
               .toStringAsFixed(0),
       'demuxer-max-back-bytes': '0',
     };

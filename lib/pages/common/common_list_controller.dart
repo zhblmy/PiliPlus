@@ -33,7 +33,7 @@ abstract class CommonListController<R, T> extends CommonController<R, T> {
             isEnd = true;
             if (isRefresh) {
               loadingState.value = Success(dataList);
-            } else if (hasFooter == true) {
+            } else if (hasFooter) {
               loadingState.refresh();
             }
             return;
