@@ -210,14 +210,40 @@ abstract final class ImageUtils {
     r'(@(\d+[a-z]_?)*)(\..*)?$',
     caseSensitive: false,
   );
-  static String thumbnailUrl(String? src, [int maxQuality = 1]) {
+
+  /// 支持图片处理参数（缩放/裁剪/质量）的 B 站图床域名
+  static final _biliImgHost = RegExp(
+    r'(^|\.)(hdslb|biliimg)\.com$',
+    caseSensitive: false,
+  );
+
+  /// 请求的图片尺寸（物理像素）。传入后由服务端先缩放/裁剪再压缩，
+  /// 比「整图按 N% 压缩、再由客户端缩小」更省流量，画质也可控。
+  static String thumbnailUrl(
+    String? src, [
+    int maxQuality = 1,
+    int? width,
+    int? height,
+  ]) {
     if (src != null && maxQuality != 100) {
       maxQuality = math.max(maxQuality, GlobalData().imgQuality);
+      final bool resize =
+          width != null &&
+          height != null &&
+          width > 0 &&
+          height > 0 &&
+          // 带查询参数的图片不是图床的图片处理地址，直接拼参数会破坏原 URL
+          !src.contains('?') &&
+          _biliImgHost.hasMatch(Uri.tryParse(src)?.host ?? '');
+      final String sizeSuffix = resize
+          ? '@${width}w_${height}h_1c_${maxQuality}q.webp'
+          : '';
       bool hasMatch = false;
       src = src.splitMapJoin(
         _thumbRegex,
         onMatch: (match) {
           hasMatch = true;
+          if (resize) return sizeSuffix;
           String suffix = match.group(3) ?? '.webp';
           return '${match.group(1)}_${maxQuality}q$suffix';
         },
@@ -226,7 +252,7 @@ abstract final class ImageUtils {
         },
       );
       if (!hasMatch) {
-        src += '@${maxQuality}q.webp';
+        src += resize ? sizeSuffix : '@${maxQuality}q.webp';
       }
     }
     return src.http2https;

@@ -17,12 +17,17 @@ class NetworkImgLayer extends StatelessWidget {
     this.fadeOutDuration = const Duration(milliseconds: 120),
     this.fadeInDuration = const Duration(milliseconds: 120),
     this.quality = 1,
+    this.thumbResize = false,
     this.borderRadius = Style.mdRadius,
     this.getPlaceHolder,
     this.fit = .cover,
     this.alignment = .center,
     this.cacheWidth,
   });
+
+  /// 图床缩放比客户端缩小更“软”，按 2 倍显示尺寸请求、再由客户端缩到目标尺寸，
+  /// 画质接近原图，流量仍比整图少一半以上。
+  static const int _thumbOversample = 2;
 
   final String? src;
   final double width;
@@ -31,6 +36,10 @@ class NetworkImgLayer extends StatelessWidget {
   final Duration fadeOutDuration;
   final Duration fadeInDuration;
   final int quality;
+
+  /// 按控件显示尺寸（含超采样倍数）向图床请求缩略图，避免下载整张大图
+  final bool thumbResize;
+
   final BorderRadius borderRadius;
   final ValueGetter<Widget>? getPlaceHolder;
   final BoxFit fit;
@@ -70,9 +79,14 @@ class NetworkImgLayer extends StatelessWidget {
     } else {
       memCacheHeight = height.cacheSize(context);
     }
+    int? thumbWidth, thumbHeight;
+    if (thumbResize && width.isFinite && height.isFinite) {
+      thumbWidth = (width * _thumbOversample).cacheSize(context);
+      thumbHeight = (height * _thumbOversample).cacheSize(context);
+    }
     return CachedNetworkImage(
       gaplessPlayback: true,
-      imageUrl: ImageUtils.thumbnailUrl(src, quality),
+      imageUrl: ImageUtils.thumbnailUrl(src, quality, thumbWidth, thumbHeight),
       width: width,
       height: height,
       memCacheWidth: memCacheWidth,

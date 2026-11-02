@@ -70,6 +70,7 @@ class VideoCardH extends StatelessWidget {
                               src: videoItem.cover,
                               width: maxWidth,
                               height: maxHeight,
+                              thumbResize: true,
                             ),
                             if (videoItem.badge case final badge?)
                               PBadge(

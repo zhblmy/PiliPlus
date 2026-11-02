@@ -111,6 +111,7 @@ class VideoCardV extends StatelessWidget {
                             src: videoItem.cover,
                             width: maxWidth,
                             height: maxHeight,
+                            thumbResize: true,
                             borderRadius: const .vertical(top: .circular(12)),
                           ),
                           if (videoItem.duration > 0)
