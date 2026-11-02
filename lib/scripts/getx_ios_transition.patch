@@ -26,7 +26,7 @@ index 14052a8..62a5bb1 100644
    final GetPageBuilder? page;
    final String? routeName;
 diff --git a/lib/get_navigation/src/routes/get_transition_mixin.dart b/lib/get_navigation/src/routes/get_transition_mixin.dart
-index b916bb4..1cabc70 100644
+index b916bb4..5c97025 100644
 --- a/lib/get_navigation/src/routes/get_transition_mixin.dart
 +++ b/lib/get_navigation/src/routes/get_transition_mixin.dart
 @@ -14,7 +14,19 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
@@ -50,7 +50,7 @@ index b916bb4..1cabc70 100644
  
    // The transitionDuration is used to create the AnimationController which is only
    // built once, so when page transition builder is updated and transitionDuration
-@@ -148,11 +160,16 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
+@@ -148,11 +160,22 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
          );
  
        case Transition.cupertino || Transition.cupertinoDialog:
@@ -68,7 +68,82 @@ index b916bb4..1cabc70 100644
 +          context,
 +          animation,
 +          secondaryAnimation,
-+          child,
++          // 只给「正在整屏滑动的上页」按屏幕硬件圆角裁切；
++          // 静止页与被压住的下页都不裁（下页是整块矩形，和 iOS 一致）。
++          _DisplayCornerClip(
++            animation: animation,
++            secondaryAnimation: secondaryAnimation,
++            child: child,
++          ),
          );
  
        case Transition.sharedAxis:
+@@ -267,3 +290,68 @@ mixin GetPageRouteTransitionMixin<T> on PageRoute<T> {
+     }
+   }
+ }
++
++/// 让正在整屏滑动的上页按屏幕的硬件圆角裁切。
++///
++/// 只裁上页：
++/// * 静止页不裁——应用的圆角本来就被屏幕物理切角挡住，不裁还能避免上报半径与
++///   面板形状（圆形 vs 超椭圆）不完全一致时在四角长期露底色；
++/// * 被压住的下页不裁——它只做 1/3 视差，两侧都不露直角，还少一个 clip layer。
++/// 页面内容在 `_ModalScope` 的 `RepaintBoundary` 之内，而转场（包括这里的
++/// clip）在它外面，所以切换 clip 只会重绘转场那几层壳，页面 layer 复用，
++/// 代价可以忽略。
++class _DisplayCornerClip extends StatelessWidget {
++  const _DisplayCornerClip({
++    required this.animation,
++    required this.secondaryAnimation,
++    required this.child,
++  });
++
++  final Animation<double> animation;
++  final Animation<double> secondaryAnimation;
++  final Widget child;
++
++  @override
++  Widget build(BuildContext context) {
++    // `_ModalScope` 用 `ListenableBuilder` 监听这两个动画，动画每一帧都会重建
++    // transitions，所以这里直接读 `value` 拿到的就是最新状态。
++    //
++    // 只裁「自己是上页、且正在整屏滑动」的那一页：被压住的下页只做 1/3 视差，
++    // 右边缘基本都停在上页左边缘右侧（起步瞬间那点亚像素交叉发生在屏幕右外侧，
++    // 被屏幕切角挡住），所以下页不裁也不会露出直角，还少一个 clip layer。
++    final isTopPageSliding = animation.value > 0.0 &&
++        animation.value < 1.0 &&
++        secondaryAnimation.value == 0.0;
++    // 只有 Android 12+ 才会填充；旧系统、iOS 与其他平台为 null。
++    final radii =
++        isTopPageSliding ? MediaQuery.maybeDisplayCornerRadiiOf(context) : null;
++    // `MyApp._builder` 的界面缩放伪造了 devicePixelRatio（size 相应缩小），
++    // 但 displayCornerRadii 是按真实 dpr 换算好的逻辑值，需要还原回来。
++    final scale = radii == null
++        ? 1.0
++        : MediaQuery.devicePixelRatioOf(context) /
++            View.of(context).devicePixelRatio;
++    // 少 1 个逻辑像素：让应用边界比屏幕切角略微内缩，收尾时不容易露出下层。
++    Radius shrink(Radius radius) {
++      final value = radius.x / scale - 1;
++      return Radius.circular(value > 0 ? value : 0);
++    }
++
++    final borderRadius = radii == null
++        ? BorderRadius.zero
++        : BorderRadius.only(
++            topLeft: shrink(radii.topLeft),
++            topRight: shrink(radii.topRight),
++            bottomLeft: shrink(radii.bottomLeft),
++            bottomRight: shrink(radii.bottomRight),
++          );
++    // 结构保持不变（始终是 `ClipRRect`）：在裁剪 / 不裁剪之间增删 widget 会让
++    // 整页重新挂载、丢掉页面状态。不裁剪时用 `Clip.none`，不产生 clip layer。
++    return ClipRRect(
++      borderRadius: borderRadius,
++      clipBehavior:
++          borderRadius == BorderRadius.zero ? Clip.none : Clip.antiAlias,
++      child: child,
++    );
++  }
++}

@@ -193,14 +193,26 @@ GetX 原生的 `Transition.cupertino` 只是套了一层 `CupertinoPageTransitio
   左缘 20px 的交互式返回（拖动时线性跟手，松手按位置/速度决定进退）、
   上一页 1/3 视差与左缘阴影；
 - `GetPageRoute` 的 `barrierColor`：`cupertino` 下默认用 iOS 的
-  `0x18000000`，转场期间上一页会被轻轻压暗（其余过渡仍为 `null`）。
+  `0x18000000`，转场期间上一页会被轻轻压暗（其余过渡仍为 `null`）；
+- 页面圆角：`cupertino` 转场把页面内容包进 `_DisplayCornerClip`，半径取自
+  `MediaQuery.maybeDisplayCornerRadiiOf`（Android 12+，逻辑像素），除以
+  `Pref.uiScale`（`_builder` 伪造了 devicePixelRatio）后再少 1 个逻辑像素。
+  **只裁正在整屏滑动的上页**（`animation ∈ (0,1)` 且 `secondaryAnimation == 0`）：
+  被压住的下页只做 1/3 视差、两侧不露直角，故不裁；静止页也不裁，用
+  `clipBehavior: Clip.none`，既不产生 clip layer，也不会因上报半径与面板形状
+  不完全一致而在四角露底色。页面内容在路由的 `RepaintBoundary` 之内，
+  切换 clip 只重绘转场外层、页面 layer 复用，不会卡收尾。
+  详见 `docs/PiliPlus-Android屏幕圆角转场实现说明.md`。
 
 因为改的是 `GetPageRoute` 本身，`Get.toNamed` 和 `Get.to(...)` 打开的页面
 都会生效，不需要逐个页面处理。
 
 **注意**：这是构建期补丁，本地调试前要先跑
 `lib/scripts/patch.ps1 android`（CI 已包含；getx 这段可重复执行，已打过会跳过）。
-如果换过 getx 的 ref 或删过 pub cache，需要重新跑一次。
+如果换过 getx 的 ref 或删过 pub cache，需要重新跑一次。**如果 pub cache 里已经
+打过旧版补丁、而 patch 文件又更新过**，`--reverse --check` 会失败，此时先执行
+`git -C <pub cache 里的 getx 目录> checkout -- .`（或删掉 `getx-*` 目录重新
+`flutter pub get`）再跑脚本。
 
 **Android 上的左缘滑动**：manifest 里开了 `enableOnBackInvokedCallback="true"`
 （预测性返回），Android 13+ 的左/右缘滑动**有可能**先被系统手势接管，此时拿到

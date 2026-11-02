@@ -355,7 +355,8 @@ function Get-PackageDir($Name) {
 
 # getx 的 `Transition.cupertino` 只有位移：时长固定 300ms，也没有左缘拖动返回。
 # 补丁把它换成 Flutter 原生的 `CupertinoRouteTransitionMixin`（500ms + 交互式
-# 返回），命名路由和 `Get.to(...)` 都会生效。
+# 返回），命名路由和 `Get.to(...)` 都会生效；同时给「正在整屏滑动的上页」
+# 按屏幕硬件圆角裁切（Android 12+ 的 `MediaQueryData.displayCornerRadii`）。
 $GetXIosTransitionPatch = "lib/scripts/getx_ios_transition.patch"
 
 $GetXDir = Get-PackageDir "get"
