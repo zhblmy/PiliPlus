@@ -56,7 +56,7 @@ class _DynamicsTabPageState extends State<DynamicsTabPage>
         physics: const AlwaysScrollableScrollPhysics(),
         controller: controller.scrollController,
         slivers: [
-          // 动态页的玻璃顶栏（与首页一致）盖在内容上，让出它的高度
+          // 动态页的顶栏（与首页一致）盖在内容上，让出它的高度
           const TopBarInsetSpacer(),
           SliverPadding(
             padding: const EdgeInsets.only(bottom: 100),

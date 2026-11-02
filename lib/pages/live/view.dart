@@ -63,7 +63,7 @@ class _LivePageState extends State<LivePage>
           controller: controller.scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // 为首页的液体玻璃顶栏让出空间
+            // 为首页的顶栏让出空间
             const TopBarInsetSpacer(),
             SliverPadding(
               padding: const EdgeInsets.only(

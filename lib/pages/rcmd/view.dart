@@ -65,7 +65,7 @@ class _RcmdPageState extends State<RcmdPage>
             ),
             cacheExtent: _cacheExtent,
             slivers: [
-              // 为首页的液体玻璃顶栏让出空间
+              // 为首页的顶栏让出空间
               const TopBarInsetSpacer(),
               SliverPadding(
                 padding: const .only(top: Style.cardSpace, bottom: 100),

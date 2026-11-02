@@ -36,7 +36,7 @@ class RefreshLayout
     return RenderRefreshLayout(
       scale: scale,
       position: position,
-      // 内容会穿过悬浮的玻璃顶栏，转圈要往下让开
+      // 内容会穿过悬浮的顶栏，转圈要往下让开
       topOffset: TopBarInset.of(context),
     );
   }
@@ -74,7 +74,7 @@ class RenderRefreshLayout extends RenderBox
 
   final Animation<double> position;
 
-  /// 视口顶部被悬浮的玻璃顶栏盖住时，转圈要往下让开的距离
+  /// 视口顶部被悬浮的顶栏盖住时，转圈要往下让开的距离
   double topOffset;
 
   /// 转圈是否可见（下拉/刷新中）。不可见时 [topOffset] 的变化不需要重排。

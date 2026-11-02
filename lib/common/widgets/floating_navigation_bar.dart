@@ -68,8 +68,9 @@ const _kPressSlideDuration = Duration(milliseconds: 320);
 ///
 /// IT之家 那条底栏相当透，所以这里给的比一般 Material 表面低不少；
 /// 想更透就继续往下调，想更实就往 0.4 走。
-const _kBarFillAlphaLight = 0.14;
-const _kBarFillAlphaDark = 0.24;
+/// 为了更通透（下层内容透出更明显），在原来的 0.14 / 0.24 上又降了一档。
+const _kBarFillAlphaLight = 0.08;
+const _kBarFillAlphaDark = 0.15;
 
 /// 玻璃模糊强度：iOS 26 那种玻璃是“重度磨砂”，糊得越狠越像玻璃。
 ///

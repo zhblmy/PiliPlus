@@ -16,6 +16,11 @@ class RelatedVideoPanel extends StatefulWidget {
 }
 
 class _RelatedVideoPanelState extends State<RelatedVideoPanel> with GridMixin {
+  /// 推荐列表的卡片比别处矮 8%（110 → 102）：封面不再被撑到 160×100，
+  /// 而是 147×92，右侧文字区随之变宽，卡片内不会留下空档。
+  @override
+  double get gridMainAxisExtent => 102;
+
   late final RelatedController _relatedController;
 
   @override

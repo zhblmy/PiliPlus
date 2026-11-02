@@ -5,9 +5,6 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:get/get.dart' show Obx;
 import 'package:material_ui/material_ui.dart';
 
-/// 玻璃顶栏外形：铺满屏幕上方的一条（不带圆角）
-const kGlassTopBarShape = RoundedRectangleBorder();
-
 /// iOS 26 那种玻璃的“高光边”：左上偏亮、右下渐隐
 const kGlassRimGradient = LinearGradient(
   begin: Alignment.topLeft,
@@ -269,9 +266,9 @@ class _GlassShadowPainter extends CustomPainter {
       oldDelegate.shape != shape || oldDelegate.color != color;
 }
 
-/// 玻璃顶栏（悬浮样式）需要预留的顶部内边距。
+/// 悬浮顶栏需要预留的顶部内边距。
 ///
-/// 首页/动态页的顶栏是**页面 Stack 里铺满整宽的悬浮玻璃层**（位于 TabBarView 之外，
+/// 首页/动态页的顶栏是**页面 Stack 里铺满整宽的实心悬浮层**（位于 TabBarView 之外，
 /// 所以切分类 Tab 时不动、也不会被各页自己的左右留白切窄）；
 /// 各 Tab 页的滚动视图只需要在 `slivers` 最前面放一个 [TopBarInsetSpacer] 让出空间。
 /// 值为 0 时不会有任何影响。
@@ -300,7 +297,7 @@ class TopBarInset extends InheritedWidget {
   /// * 即时模式 = 收起动画的进度（上滑收起、下滑出现）。
   ///
   /// 顶栏当前高度 = `value - collapse`（超出量程的部分自动 clamp）。
-  /// 玻璃、让位 sliver、以及固定不滚动又要与顶栏底部对齐的元素
+  /// 顶栏、让位 sliver、以及固定不滚动又要与顶栏底部对齐的元素
   /// （如排行榜左侧竖排 Tab 栏）都用同一个值，天然不会对不上。
   ///
   /// 必须是**稳定的实例**（如页面 State 里的一个 `ValueNotifier`、一个
@@ -328,11 +325,11 @@ class TopBarInset extends InheritedWidget {
       followScroll != oldWidget.followScroll;
 }
 
-/// 放在 `CustomScrollView.slivers` 最前面的让位 sliver（玻璃本体由页面 Stack 画，
+/// 放在 `CustomScrollView.slivers` 最前面的让位 sliver（顶栏本体由页面 Stack 画，
 /// 这里只是占位、什么都不画）。
 ///
 /// * 同步模式（[TopBarInset.followScroll]）：高度固定为 [TopBarInset.value]，
-///   于是内容顶部 = `value - 滚动位置`，与玻璃的收起严格同步、原生 1:1；
+///   于是内容顶部 = `value - 滚动位置`，与顶栏的收起严格同步、原生 1:1；
 /// * 即时模式：高度 = `value - 收起进度`，让位跟着收起动画收缩。
 class TopBarInsetSpacer extends StatelessWidget {
   const TopBarInsetSpacer({super.key});
@@ -358,4 +355,56 @@ class TopBarInsetSpacer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 裁掉顶栏**始终盖住**的那一块（= 顶栏收起后的高度），并把内容隔成独立的重绘层。
+///
+/// 首页/动态页的顶栏是**不透明实心色**（不做模糊）：内容从它下面经过时看不见，
+/// 也就不必再画；滚动时也只有顶栏下面这块区域需要重绘。
+///
+/// 注意裁的是「收起后的高度」，**不是**顶栏当前高度：
+/// * 收起进度与内容让位大多时候严格同步，但列表整体跳回顶部（刷新、切 Tab、
+///   `jumpTo` 等不回发滚动通知的情况）时会有瞬时不一致；若按当前高度裁，
+///   就会把已经露出来的列表顶部一起裁掉——表现为「收起后吞掉一截内容」。
+/// * 而 `[0, 收起后的高度)` 这块**任何状态下都被不透明的顶栏盖住**，
+///   裁掉它永远不会裁到用户看得见的东西；
+/// * 它和顶栏当前高度之间那段（最多一条「让位 sliver」）本身是空的，
+///   画不画都一样，所以按当前高度裁也省不下什么。
+class ClipBelowTopBar extends StatelessWidget {
+  const ClipBelowTopBar({
+    super.key,
+    required this.height,
+    required this.child,
+  });
+
+  /// 顶栏收起后仍然盖住的高度（顶栏不收起时就是顶栏高度）
+  final double height;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+    clipper: _TopEdgeClipper(height),
+    // 内容自成一层的重绘边界：滚动时只有它在重画，
+    // 页面外层（含顶栏那一层）只做合成，不再跟着重录绘制指令
+    child: RepaintBoundary(child: child),
+  );
+}
+
+/// 裁掉顶部 [top] 那一条（被顶栏盖住的区域）
+class _TopEdgeClipper extends CustomClipper<Rect> {
+  const _TopEdgeClipper(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(
+    0,
+    top.clamp(0.0, size.height),
+    size.width,
+    size.height,
+  );
+
+  @override
+  bool shouldReclip(_TopEdgeClipper oldClipper) => oldClipper.top != top;
 }

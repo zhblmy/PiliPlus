@@ -66,7 +66,7 @@ class _HotPageState extends State<HotPage>
         physics: const AlwaysScrollableScrollPhysics(),
         controller: controller.scrollController,
         slivers: [
-          // 为首页的液体玻璃顶栏让出空间
+          // 为首页的顶栏让出空间
           const TopBarInsetSpacer(),
           if (Pref.showHotRcmd)
             SliverToBoxAdapter(

@@ -380,7 +380,7 @@ class _MainAppState extends PopScopeState<MainApp>
   @override
   Widget build(BuildContext context) {
     // 竖屏底栏模式下 body 铺满全屏（含状态栏），状态栏那片交给页面自己：
-    // 首页、动态页是盖住状态栏的玻璃顶栏，其它页面补一个顶部内边距。
+    // 首页、动态页是盖住状态栏的悬浮顶栏，其它页面补一个顶部内边距。
     // 两种模式下都包一层 Padding（为 0 时无副作用），这样横竖屏切换时
     // 页面的 element 不会被重建、状态不会丢。
     final bool useBottomNav = _mainController.useBottomNav;
@@ -399,7 +399,7 @@ class _MainAppState extends PopScopeState<MainApp>
       }
       return Padding(
         padding: switch (type) {
-          // 首页、动态页是盖住状态栏的玻璃顶栏
+          // 首页、动态页是盖住状态栏的悬浮顶栏
           .home || .dynamics => EdgeInsets.zero,
           _ => pagePadding,
         },

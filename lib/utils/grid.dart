@@ -7,7 +7,12 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 mixin GridMixin {
-  late final gridDelegate = Grid.videoCardHDelegate();
+  /// 卡片（含上下内边距）的高度，子类可覆盖（如视频页推荐列表要更矮的卡片）
+  double get gridMainAxisExtent => 110;
+
+  late final gridDelegate = Grid.videoCardHDelegate(
+    mainAxisExtent: gridMainAxisExtent,
+  );
 
   Widget get gridSkeleton => SliverGrid(
     gridDelegate: gridDelegate,

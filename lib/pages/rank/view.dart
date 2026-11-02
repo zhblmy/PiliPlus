@@ -86,7 +86,7 @@ class _RankPageState extends State<RankPage>
     if (extent <= 0 || collapse == null) {
       return tabBar(expanded);
     }
-    // 跟首页玻璃顶栏用同一个收起进度，而不是自己去 Get.find 分区页控制器
+    // 跟首页顶栏用同一个收起进度，而不是自己去 Get.find 分区页控制器
     // （那个在分区页建好前会招异常，且切分区时会失效）
     return ValueListenableBuilder<double>(
       valueListenable: collapse,

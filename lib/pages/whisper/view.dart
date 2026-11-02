@@ -43,7 +43,7 @@ class _WhisperPageState extends State<WhisperPage>
   }
 
   /// 作为底栏分类使用时和别的 Tab 一样：内容上滑收起底栏、下滑弹出。
-  /// 只动底栏，不动首页那条玻璃顶栏的状态。
+  /// 只动底栏，不动首页那条顶栏的状态。
   bool _onScroll(UserScrollNotification notification) {
     final mainController = _mainController;
     if (mainController == null || !mainController.useBottomNav) return false;

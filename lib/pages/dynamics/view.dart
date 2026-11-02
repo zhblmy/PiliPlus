@@ -14,7 +14,6 @@ import 'package:PiliPlus/pages/dynamics_tab/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
-import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart' hide DraggableScrollableSheet;
@@ -74,7 +73,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
     return positions.length == 1 ? positions.first : null;
   }
 
-  /// 顶栏当前收起进度（px，0..量程）；玻璃、让位 sliver 共用同一个值。
+  /// 顶栏当前收起进度（px，0..量程）；顶栏、让位 sliver 共用同一个值。
   ///
   /// * 同步模式：= 可见列表的滚动位置（滚动通知驱动，跟手 1:1）；
   /// * 即时模式：= 收起动画的当前进度（上滑收起、下滑出现）。
@@ -89,11 +88,11 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
   /// 「即时」模式：按滚动方向两态收起/出现
   bool get _instant => _mainController.barHideType == .instant;
 
-  /// 收起量程 = 「顶部」UP 面板高度（玻璃里可以被收起掉的那部分）
+  /// 收起量程 = 「顶部」UP 面板高度（顶栏里可以被收起掉的那部分）
   double get _collapseExtent => _kUpPanelTopHeight;
 
   /// 面板是否可收起（与 build 里的 `collapsiblePanel` 同义：
-  /// 玻璃模式 + 竖屏 + 开关打开 + 面板在顶部。横屏/侧栏模式下面板参与排版，
+  /// 竖屏底栏模式 + 开关打开 + 面板在顶部。横屏/侧栏模式下面板参与排版，
   /// 不能跟着收起，所以这里必须和 build 判得一样）
   bool get _panelCollapsible =>
       _mainController.useBottomNav &&
@@ -185,7 +184,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       return false;
     }
     // 同步模式：必须知道是哪个列表 —— 收起进度就是它的滚动位置。
-    // 只认「当前 Tab 的列表」：保活的其他 Tab、内嵌的竖直列表（含非玻璃模式
+    // 只认「当前 Tab 的列表」：保活的其他 Tab、内嵌的竖直列表（含悬浮顶栏模式
     // 下位于 body 里的 UP 面板）都会把通知冒泡上来。
     final position = dispatchPositionOf(notification);
     if (position == null) return false;
@@ -295,36 +294,39 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
           .toList(),
     );
 
-    // 竖屏底栏模式：与首页一致，顶栏改成“盖住状态栏的液体玻璃悬浮层”，
-    // 内容从它下方穿过并被模糊；其它模式（侧边栏/横屏）保持原样（顶栏参与排版）。
+    // 竖屏底栏模式：与首页一致，顶栏改成“盖住状态栏的实心悬浮条”，
+    // 内容只在它下方绘制；其它模式（侧边栏/横屏）保持原样（顶栏参与排版）。
     // 判定用 MainLayout 布局模式的那个唯一来源（useBottomNav，等价于首页的
     // showAppBar = !useSideBar && isPortrait），避免在页面里再算一遍。
     // 这里仍然要读一次 MediaQuery.sizeOf：useBottomNav 是 MainLayout 里的普通
     // bool，本页不会因为它变化而重建；读 size 才能让旋转屏幕时本页重跑 build，
-    // 否则横屏后玻璃布局会残留下来（还会把状态栏那片算两次）。
-    final bool glassBar =
+    // 否则横屏后悬浮顶栏布局会残留下来（还会把状态栏那片算两次）。
+    final bool floatingBar =
         _mainController.useBottomNav && MediaQuery.sizeOf(context).isPortrait;
     final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
-    // 「顶部」位置的 UP 面板会像首页的搜索栏那样放进玻璃顶栏里
-    final bool topPanelInGlass = glassBar && upPanelPosition == .top;
+    // 「顶部」位置的 UP 面板会像首页的搜索栏那样放进顶栏里
+    final bool topPanelInBar = floatingBar && upPanelPosition == .top;
     // 面板随滚动收起 / 下拉再展开：与首页搜索栏共用同一个「滚动隐藏顶栏」开关。
     // 收起进度由「当前 Tab 的滚动位置」直接驱动（不再用全局 barOffset）。
-    final bool collapsiblePanel = topPanelInGlass && Pref.hideTopBar;
-    // 玻璃顶栏占掉的高度：状态栏那片 + 分类 Tab 栏（+ 顶部 UP 面板）
-    final double barInset = glassBar
+    final bool collapsiblePanel = topPanelInBar && Pref.hideTopBar;
+    // 顶栏占掉的高度：状态栏那片 + 分类 Tab 栏（+ 顶部 UP 面板），
+    // 以及面板收起后仍保留的部分
+    final double barInset = floatingBar
         ? statusBarHeight +
               _kAppBarHeight +
-              (topPanelInGlass ? _kUpPanelTopHeight : 0.0)
+              (topPanelInBar ? _kUpPanelTopHeight : 0.0)
         : 0.0;
-    // 放进玻璃顶栏的顶部 UP 面板
+    final double minBarInset =
+        barInset - (collapsiblePanel ? _collapseExtent : 0.0);
+    // 放进顶栏的顶部 UP 面板
     Widget? topPanel;
 
     switch (upPanelPosition) {
       case .top:
         actions = _createDynamicBtn(colorScheme);
-        if (topPanelInGlass) {
-          // 与首页同款：面板放进玻璃顶栏（相当于首页的搜索栏那段），
-          // 列表铺满整屏，滚动时从它下面穿过并被模糊
+        if (topPanelInBar) {
+          // 与首页同款：面板放进顶栏（相当于首页的搜索栏那段），
+          // 列表铺满整屏，滚动时从它下面穿过（顶栏不透明，看不见）
           topPanel = upPanelPart(colorScheme);
         } else {
           child = Column(
@@ -406,7 +408,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       ],
     );
 
-    if (!glassBar) {
+    if (!floatingBar) {
       return Scaffold(
         primary: false,
         resizeToAvoidBottomInset: false,
@@ -422,7 +424,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       );
     }
 
-    // 与首页同款：状态栏那片也交给玻璃顶栏（不跟着内容收起/展开），
+    // 与首页同款：状态栏那片也交给顶栏（不跟着内容收起/展开），
     // 所以内容要自己让出 inset，见 TopBarInsetSpacer。
     final Widget content = onBuild(
       NotificationListener<ScrollNotification>(
@@ -431,7 +433,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       ),
     );
 
-    /// 玻璃顶栏里的「顶部」UP 面板，收起时按当前高度裁切。
+    /// 顶栏里的「顶部」UP 面板，收起时按当前高度裁切。
     /// CustomHeightWidget 只会把内容往上挪、并不自己裁剪（和 AnimatedContainer
     /// 一样），所以外面必须套一层 ClipRect，否则会画到分类 Tab 栏上；
     /// 这与首页搜索栏的处理完全一致。
@@ -458,32 +460,25 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
       );
     }
 
-    // 与首页完全同款：顶栏是「悬浮在本页内容之上的液体玻璃层」，
-    // 中间不隔 Scaffold/Material（否则 BackdropFilter 取不到下层内容，
-    // 看着就是一条纯色条）。玻璃铺满整宽、盖住状态栏，内容从它下方穿过。
+    // 与首页完全同款：顶栏是悬浮在本页内容之上的**实心色**条（不做模糊、
+    // 不透明），铺满整宽、盖住状态栏；再配合下面那层 [ClipBelowTopBar]
+    // 让内容只在它下面绘制。
     //
     // 结构：状态栏那片 → 分类 Tab 栏 → 可收起的「顶部」UP 面板（在 Tab 栏下方）。
-    // 性能：玻璃实例建一次，收起过程中**只重建 UP 面板那一层包装**，
-    // 不会每帧重建 BackdropFilter。
-    Widget glassTopBar() {
+    // 性能：顶栏实例建一次，收起过程中**只重建 UP 面板那一层包装**。
+    Widget solidTopBar() {
       final panel = topPanel;
-      return LiquidGlass(
-        shape: kGlassTopBarShape,
-        blur: 16,
-        color: colorScheme.surface.withValues(
-          alpha: colorScheme.isDark ? 0.5 : 0.62,
-        ),
-        shadowColor: Colors.black.withValues(
-          alpha: colorScheme.isDark ? 0.4 : 0.1,
-        ),
+      return ColoredBox(
+        // 实心色（不透明、无模糊）：和页面底色一致
+        color: colorScheme.surface,
         child: Column(
           mainAxisSize: .min,
           children: [
             SizedBox(height: statusBarHeight),
             // 卡死 42 高：Column 高度自适应时 TabBar 会按自己的
-            // preferredSize(46+2=48) 把玻璃顶栏撑高，比 inset 多 6px
+            // preferredSize(46+2=48) 把顶栏撑高，比 inset 多 6px
             SizedBox(height: _kAppBarHeight, child: appBar),
-            // 「顶部」UP 面板（跟首页搜索栏一样长在玻璃上，一起收起）
+            // 「顶部」UP 面板（跟首页搜索栏一样长在顶栏上，一起收起）
             if (panel != null)
               collapsiblePanel ? scrollDrivenPanel(panel) : panel,
           ],
@@ -494,24 +489,35 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
     final Widget stack = Stack(
       children: [
         Positioned.fill(
-          // 让位交给 TopBarInsetSpacer；collapse 是玻璃/让位共用的收起进度，
+          // 让位交给 TopBarInsetSpacer；collapse 是顶栏/让位共用的收起进度，
           // followScroll 区分「同步（滚动自己让位）」与「即时（让位跟动画收缩）」。
           // 不收起时 minValue 必须等于 value，否则内容会缩到面板里去。
-          child: TopBarInset(
-            value: barInset,
-            // 收起后仍要保留的：状态栏那片 + 分类 Tab 栏
-            minValue: barInset - (collapsiblePanel ? _collapseExtent : 0.0),
-            collapse: _barCollapse,
-            followScroll: !_instant,
-            child: content,
+          child: ClipBelowTopBar(
+            // 只裁顶栏收起后也一定盖住的那条，避免瞬时不同步时裁掉列表内容
+            height: minBarInset,
+            child: TopBarInset(
+              value: barInset,
+              // 收起后仍要保留的：状态栏那片 + 分类 Tab 栏
+              minValue: minBarInset,
+              collapse: _barCollapse,
+              followScroll: !_instant,
+              child: content,
+            ),
           ),
         ),
-        Positioned(top: 0, left: 0, right: 0, child: glassTopBar()),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          // 顶栏自成一层的重绘边界：滚动时下层内容每帧都在重画，
+          // 顶栏（实心色 + 图标文字）不必跟着重录一遍
+          child: RepaintBoundary(child: solidTopBar()),
+        ),
       ],
     );
 
     // 抽屉模式必须要 Scaffold（DrawerButton/EndDrawerButton 要能 Scaffold.of
-    // 找到它），这时玻璃只能放在 Scaffold.body 里；其余情况（默认的左/右/顶部
+    // 找到它），这时顶栏只能放在 Scaffold.body 里；其余情况（默认的左/右/顶部
     // UP 面板）与首页一样，页面根就是 Stack、中间不再隔一层。
     if (drawer != null || endDrawer != null) {
       return Scaffold(

@@ -9,7 +9,6 @@ import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/mine/controller.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/size_ext.dart';
-import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:get/get.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
@@ -35,7 +34,7 @@ class _HomePageState extends CommonPageState<HomePage>
   @override
   bool get useBarOffset => false;
 
-  /// 收起量程 = 搜索栏高度（玻璃顶栏可收起的部分），生效条件同 [_barCollapsible]；
+  /// 收起量程 = 搜索栏高度（顶栏可收起的部分），生效条件同 [_barCollapsible]；
   /// 即时模式不需要补间（动画自己会到端点）。
   @override
   double get pinnedHeaderExtent =>
@@ -57,7 +56,7 @@ class _HomePageState extends CommonPageState<HomePage>
     }
   }
 
-  /// 顶栏当前收起进度（px，0..量程）。玻璃、让位 sliver、排行榜左侧竖栏
+  /// 顶栏当前收起进度（px，0..量程）。顶栏、让位 sliver、排行榜左侧竖栏
   /// 都用同一个值，天然不会对不上。
   ///
   /// * 同步模式：= 可见列表的滚动位置（滚动通知驱动，跟手 1:1）；
@@ -83,8 +82,8 @@ class _HomePageState extends CommonPageState<HomePage>
   /// 注册依赖，所以统一在 didChangeDependencies 里缓存一次。
   bool _isPortrait = true;
 
-  /// 顶栏是否真的可以收起 = 「会建玻璃顶栏」且「收开关打开」。
-  /// 横屏 / 侧栏模式下本页不建玻璃顶栏与让位 sliver，收起进度没人读，
+  /// 顶栏是否真的可以收起 = 「会建顶栏」且「收起开关打开」。
+  /// 横屏 / 侧栏模式下本页不建顶栏与让位 sliver，收起进度没人读，
   /// 再去算它、动它都是白费；把条件收在这里也免得各处再写一遍。
   bool get _barCollapsible =>
       _homeController.hideTopBar && !_mainController.useSideBar && _isPortrait;
@@ -270,33 +269,37 @@ class _HomePageState extends CommonPageState<HomePage>
       );
     }
 
-    // 顶栏（搜索栏 + 分类 Tab）是液体玻璃悬浮层，铺满整宽、盖住状态栏，
-    // 内容从它下方穿过并被模糊。
+    // 顶栏（搜索栏 + 分类 Tab）是悬浮在页面之上的**实心色**条：铺满整宽、
+    // 盖住状态栏。不做模糊、不透明，所以内容不会从它下面透出来；
+    // 再配合 [ClipBelowTopBar] 把顶栏盖住的那条裁掉，内容只在它下面绘制。
     //
     // 分工：
     // * 让位：各 Tab 页滚动视图首位的 TopBarInsetSpacer（不可见的 pinned sliver，
     //   高度随滚动收缩）—— 原生跟手、不需要 correctBy 偷滚动；
-    // * 外观：下面这层玻璃，用**同一个滚动位置**驱动收起，两者不会对不上。
-    // * 性能：玻璃实例在这里建一次，滚动时只重建搜索行那一层包装。
+    // * 外观：下面这条实心顶栏，用**同一个滚动位置**驱动收起，两者不会对不上。
+    // * 性能：顶栏实例在这里建一次，滚动时只重建搜索行那一层包装。
     final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
     final double tabAreaHeight = hasTabBar ? Style.tabBarHeight : 6.0;
     final bool collapsible = _homeController.hideTopBar;
+    // 顶栏高度：完全展开 / 收起后仍保留（状态栏那片 + 分类 Tab 栏）
+    final double topBarExtent =
+        statusBarHeight + Style.topBarHeight + tabAreaHeight;
+    final double minTopBarExtent = collapsible
+        ? statusBarHeight + tabAreaHeight
+        : topBarExtent;
 
-    Widget glassTopBar() {
-      final bool isDark = _colorScheme.isDark;
+    Widget solidTopBar() {
       // 静态的搜索行内容（只跟主题/登录态有关）
       final searchRow = _searchRow();
-      return LiquidGlass(
-        shape: kGlassTopBarShape,
-        blur: 16,
-        color: _colorScheme.surface.withValues(alpha: isDark ? 0.5 : 0.62),
-        shadowColor: Colors.black.withValues(alpha: isDark ? 0.4 : 0.1),
+      return ColoredBox(
+        // 实心色（不透明、无模糊）：和页面底色一致，看起来就是一条纯色顶栏
+        color: _colorScheme.surface,
         child: Column(
           mainAxisSize: .min,
           children: [
             SizedBox(height: statusBarHeight),
             // CustomHeightWidget 收起时只会把内容挪走、并不裁剪，
-            // 超出搜索栏那块的会画到状态栏那片玻璃上，必须裁掉。
+            // 超出搜索栏那块的会画到状态栏那片上，必须裁掉。
             ClipRect(
               child: collapsible
                   ? _scrollDrivenSearchArea(searchRow)
@@ -311,20 +314,29 @@ class _HomePageState extends CommonPageState<HomePage>
     return Stack(
       children: [
         Positioned.fill(
-          // 让位交给 TopBarInsetSpacer；collapse 是玻璃/让位/固定元素共用的收起进度，
+          // 让位交给 TopBarInsetSpacer；collapse 是顶栏/让位/固定元素共用的收起进度，
           // followScroll 区分「同步（滚动自己让位）」与「即时（让位跟动画收缩）」。
           // 不收起时 minValue 必须等于 value，否则内容会缩到搜索栏里去。
-          child: TopBarInset(
-            value: statusBarHeight + Style.topBarHeight + tabAreaHeight,
-            minValue: collapsible
-                ? statusBarHeight + tabAreaHeight
-                : statusBarHeight + Style.topBarHeight + tabAreaHeight,
-            collapse: _barCollapse,
-            followScroll: !_instant,
-            child: body,
+          child: ClipBelowTopBar(
+            // 只裁顶栏收起后也一定盖住的那条，避免瞬时不同步时裁掉列表内容
+            height: minTopBarExtent,
+            child: TopBarInset(
+              value: topBarExtent,
+              minValue: minTopBarExtent,
+              collapse: _barCollapse,
+              followScroll: !_instant,
+              child: body,
+            ),
           ),
         ),
-        Positioned(top: 0, left: 0, right: 0, child: glassTopBar()),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          // 顶栏自成一层的重绘边界：滚动时下层内容每帧都在重画，
+          // 顶栏（实心色 + 图标文字）不必跟着重录一遍
+          child: RepaintBoundary(child: solidTopBar()),
+        ),
       ],
     );
   }
@@ -367,7 +379,7 @@ class _HomePageState extends CommonPageState<HomePage>
     return ValueListenableBuilder<double>(
       valueListenable: _barCollapse,
       // child 是那个静态搜索行实例：每帧只重建这层包装（改高度 + 位移），
-      // 搜索行本身与玻璃（BackdropFilter）都不在这层的重建范围里
+      // 搜索行本身与顶栏都不在这层的重建范围里
       child: content,
       builder: (context, collapse, child) =>
           _collapsibleSearchArea(child!, collapse),
