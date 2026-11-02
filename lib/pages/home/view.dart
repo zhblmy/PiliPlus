@@ -1,8 +1,8 @@
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/custom_height_widget.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
-import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
+import 'package:PiliPlus/common/widgets/top_bar_inset.dart';
 import 'package:PiliPlus/pages/common/common_page.dart';
 import 'package:PiliPlus/pages/home/controller.dart';
 import 'package:PiliPlus/pages/main/controller.dart';

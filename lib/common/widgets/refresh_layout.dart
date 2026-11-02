@@ -1,7 +1,7 @@
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart'
     show displacement, kIndicatorSize;
-import 'package:PiliPlus/common/widgets/liquid_glass.dart' show TopBarInset;
 import 'package:PiliPlus/common/widgets/slotted_layout_helper.dart';
+import 'package:PiliPlus/common/widgets/top_bar_inset.dart' show TopBarInset;
 import 'package:flutter/rendering.dart' show BoxHitTestResult, ClipRectLayer;
 import 'package:material_ui/material_ui.dart' hide RefreshIndicatorStatus;
 

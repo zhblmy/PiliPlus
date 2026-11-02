@@ -1,7 +1,7 @@
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/custom_height_widget.dart';
-import 'package:PiliPlus/common/widgets/liquid_glass.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart' show tabBarView;
+import 'package:PiliPlus/common/widgets/top_bar_inset.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models/common/dynamic/dynamics_type.dart';
 import 'package:PiliPlus/models/common/dynamic/up_panel_position.dart';
