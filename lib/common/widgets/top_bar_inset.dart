@@ -24,7 +24,7 @@ class TopBarInset extends InheritedWidget {
   /// 顶栏完全展开时的高度（收起量程就是 `value - minValue`）
   final double value;
 
-  /// 顶栏收到最小时仍要保留的高度（状态栏那片 + 分类 Tab 栏）
+  /// 顶栏收起后仍要保留的高度（状态栏那片 + 分类 Tab 栏）
   final double minValue;
 
   /// 顶栏当前的收起进度（px，0..`value - minValue`），由页面驱动：
@@ -43,7 +43,7 @@ class TopBarInset extends InheritedWidget {
   /// 让位（空间）是否由滚动本身完成。
   /// * true（同步模式）：让位 sliver 高度固定为 [value]，内容与手指 1:1 跟手，
   ///   滚动到哪就是哪（不需要 any 补间）；
-  /// * false（即时模式）：让位高度跟随 [collapse] 收缩，否则杆收起后顶上会留一条空白。
+  /// * false（即时模式）：让位高度跟随 [collapse] 收缩，否则栏收起后顶上会留一条空白。
   final bool followScroll;
 
   static TopBarInset? maybeOf(BuildContext context) =>

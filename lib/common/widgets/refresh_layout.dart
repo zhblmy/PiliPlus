@@ -36,7 +36,8 @@ class RefreshLayout
     return RenderRefreshLayout(
       scale: scale,
       position: position,
-      // 内容会穿过悬浮的顶栏，转圈要往下让开
+      // 内容会穿过悬浮的顶栏，转圈要往下让开。
+      // 这里取的是**展开高度**：下拉刷新时列表先回到顶部、顶栏必然完全展开
       topOffset: TopBarInset.of(context),
     );
   }
