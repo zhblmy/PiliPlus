@@ -4,6 +4,7 @@ import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scroll_behavior.dart';
+import 'package:PiliPlus/common/widgets/scroll_physics.dart';
 import 'package:PiliPlus/common/widgets/top_bar_inset.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_v.dart';
 import 'package:PiliPlus/http/loading_state.dart';
@@ -33,14 +34,15 @@ class _RcmdPageState extends State<RcmdPage>
   /// 它同时是「什么时候把末条 build 出来、从而续拉下一页」的触发距离，所以取值
   /// 决定了两件事：首帧连锁拉几页、以及划动时提前多远开始请求下一页。
   ///
-  /// 一行约 98（卡片 90 + 间距 8），APP 端推荐每页 10 条（约 5 行 490dp）。
+  /// 一行约 98（卡片 90 + 间距 8），一次刷新给 20 条（约 10 行 980dp，
+  /// APP 接口每页 10 条、刷新时连拉两页，见 `RcmdController._appRefreshPages`）。
   /// 取 700（约一屏）是按这两个数算过的折中：
-  /// - 首帧连锁到第 3 页就停（30 条、约 2.3 屏内容，预建卡片约 28 张）；
-  ///   原值 1200 会预建到第 4 页（约 38 张），冷启动时几十张缩略图一起抢带宽，
+  /// - 首帧连锁到第 4 页就停（40 条、约 3 屏内容，预建卡片约 28 张）；
+  ///   原值 1200 会再多拉一页，冷启动时几十张缩略图一起抢带宽，
   ///   是首页首次加载慢的原因之一；
   /// - 同时留出约一屏的提前量，下一页在划到底之前就发出，不会出现
   ///   「划一下就到底、还得干等加载」。
-  /// 低内存档位（或已出现过内存压力）再减半到 350（首帧仍是 3 页，提前量减半）。
+  /// 低内存档位（或已出现过内存压力）再减半到 350（提前量减半）。
   static double get _cacheExtent =>
       MemoryBudget.isLowMemory || MemoryBudget.isUnderPressure ? 350 : 700;
 
@@ -54,13 +56,14 @@ class _RcmdPageState extends State<RcmdPage>
       decoration: const BoxDecoration(borderRadius: Style.mdRadius),
       child: refreshIndicator(
         onRefresh: controller.onRefresh,
-        // BouncingScrollPhysics 自己就会“弹”，别再叠加 Android 的拉伸指示器
+        // 下拉越界被顶部夹紧，内容不会位移；也不叠加 Android 的拉伸指示器
         child: ScrollConfiguration(
           behavior: const NoOverscrollIndicator(),
           child: CustomScrollView(
             controller: controller.scrollController,
-            // iOS/小米那种带阻尼的回弹与惯性，比 Android 默认的“夹紧 + 拉伸”更顺滑跟手
-            physics: const BouncingScrollPhysics(
+            // 下拉刷新时内容不动，只让转圈出现（越界量交给 RefreshIndicator）；
+            // 其余方向仍是 iOS/小米那种带阻尼的回弹
+            physics: const BouncingScrollPhysicsTopClamped(
               parent: AlwaysScrollableScrollPhysics(),
             ),
             cacheExtent: _cacheExtent,

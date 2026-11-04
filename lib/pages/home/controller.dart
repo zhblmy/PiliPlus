@@ -64,7 +64,15 @@ class HomeController extends GetxController
 
     if (enableSearchWord) {
       lateCheckSearchAt = DateTime.now().millisecondsSinceEpoch;
-      querySearchDefault();
+      // 启动期只读上次成功的搜索词（Hive 同步读），不发请求
+      final cached = GStorage.localCache.get(LocalCacheKey.searchDefault);
+      if (cached is String && cached.isNotEmpty) {
+        defaultSearch.value = cached;
+      }
+      // 首屏之后再静默刷新一次，避免 build 期就发起网络请求
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        querySearchDefault();
+      });
     }
 
     setTabConfig();
@@ -105,7 +113,12 @@ class HomeController extends GetxController
         queryParameters: await WbiSign.makSign({'web_location': 333.1365}),
       );
       if (res.data['code'] == 0) {
-        defaultSearch.value = res.data['data']?['name'] ?? '';
+        final String name = res.data['data']?['name'] ?? '';
+        // 空结果不能把首帧从缓存恢复出来的提示词清掉
+        if (name.isNotEmpty) {
+          defaultSearch.value = name;
+          GStorage.localCache.put(LocalCacheKey.searchDefault, name);
+        }
         // defaultSearch.value = res.data['data']?['show_name'] ?? '';
       }
     } catch (_) {}

@@ -52,6 +52,7 @@ abstract final class VideoHttp {
   static Future<LoadingState<List<RcmdVideoItemModel>>> rcmdVideoList({
     required int ps,
     required int freshIdx,
+    void Function(List items)? onRawItems,
   }) async {
     final res = await Request().get(
       Api.recommendListWeb,
@@ -66,19 +67,29 @@ abstract final class VideoHttp {
       }),
     );
     if (res.data['code'] == 0) {
-      List<RcmdVideoItemModel> list = <RcmdVideoItemModel>[];
-      for (final i in res.data['data']['item']) {
-        //过滤掉live与ad，以及拉黑用户
-        if (_filterWebRcmd(i)) continue;
-        final videoItem = RcmdVideoItemModel.fromJson(i);
-        if (!RecommendFilter.filterWithExempt(videoItem)) {
-          list.add(videoItem);
-        }
-      }
-      return Success(list);
+      final List items = res.data['data']['item'];
+      onRawItems?.call(items);
+      return Success(parseWebRcmdItems(items));
     } else {
       return Error(res.data['message']);
     }
+  }
+
+  /// 解析 + 过滤 web 端推荐流的原始 item。
+  ///
+  /// 本地缓存回放（`RcmdCache`）必须复用这个函数，否则用户新拉黑的 UP、
+  /// 新加的屏蔽词不会生效。
+  static List<RcmdVideoItemModel> parseWebRcmdItems(List items) {
+    final list = <RcmdVideoItemModel>[];
+    for (final i in items) {
+      //过滤掉live与ad，以及拉黑用户
+      if (_filterWebRcmd(i)) continue;
+      final videoItem = RcmdVideoItemModel.fromJson(i);
+      if (!RecommendFilter.filterWithExempt(videoItem)) {
+        list.add(videoItem);
+      }
+    }
+    return list;
   }
 
   static bool _filterWebRcmd(dynamic i) {
@@ -112,6 +123,7 @@ abstract final class VideoHttp {
   // 添加额外的loginState变量模拟未登录状态
   static Future<LoadingState<List<RcmdVideoItemAppModel>>> rcmdVideoListApp({
     required int freshIdx,
+    void Function(List items)? onRawItems,
   }) async {
     final params = {
       'build': 8430300,
@@ -162,19 +174,29 @@ abstract final class VideoHttp {
       ),
     );
     if (res.data['code'] == 0) {
-      final list = <RcmdVideoItemAppModel>[];
-      for (final i in res.data['data']['items']) {
-        // 屏蔽推广和拉黑用户
-        if (_filterAppRcmd(i)) continue;
-        final videoItem = RcmdVideoItemAppModel.fromJson(i);
-        if (!RecommendFilter.filterWithExempt(videoItem)) {
-          list.add(videoItem);
-        }
-      }
-      return Success(list);
+      final List items = res.data['data']['items'];
+      onRawItems?.call(items);
+      return Success(parseAppRcmdItems(items));
     } else {
       return Error(res.data['message']);
     }
+  }
+
+  /// 解析 + 过滤 App 端推荐流的原始 item。
+  ///
+  /// 本地缓存回放（`RcmdCache`）必须复用这个函数，否则用户新拉黑的 UP、
+  /// 新加的屏蔽词不会生效。
+  static List<RcmdVideoItemAppModel> parseAppRcmdItems(List items) {
+    final list = <RcmdVideoItemAppModel>[];
+    for (final i in items) {
+      // 屏蔽推广和拉黑用户
+      if (_filterAppRcmd(i)) continue;
+      final videoItem = RcmdVideoItemAppModel.fromJson(i);
+      if (!RecommendFilter.filterWithExempt(videoItem)) {
+        list.add(videoItem);
+      }
+    }
+    return list;
   }
 
   static bool _filterHotAndRank(dynamic i) {

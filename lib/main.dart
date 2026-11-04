@@ -180,7 +180,13 @@ void main() async {
 
   Request();
   Request.setCookie();
-  RequestUtils.syncHistoryStatus();
+  // 冷启动优化 S-05：WebView cookie、硬币余额、历史续播状态都与首屏无关，
+  // 统一推到首帧之后 —— 启动瞬间不再打几十次 method channel，
+  // 也不再有额外网络请求和首屏的推荐流抢连接。
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    Request.setCookieDeferred();
+    RequestUtils.syncHistoryStatus();
+  });
 
   SmartDialog.config.toast = SmartConfigToast(displayType: .onlyRefresh);
 

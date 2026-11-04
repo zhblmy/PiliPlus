@@ -265,6 +265,8 @@ abstract final class LocalCacheKey {
       blackMids = 'blackMids',
       danmakuFilterRules = 'danmakuFilterRules',
       mixinKey = 'mixinKey',
+      rcmdCache = 'rcmdCache',
+      searchDefault = 'searchDefault',
       timeStamp = 'timeStamp';
 }
 

@@ -36,20 +36,36 @@ class Request {
   factory Request() => _instance;
 
   /// 设置cookie
+  ///
+  /// 只做「后续请求立刻就要有」的部分：账号拦截器 + buvid 激活。
+  /// WebView cookie 与硬币余额跟首屏无关，见 [setCookieDeferred]，
+  /// 由启动流程在首帧之后再调用 —— 否则启动瞬间要为每个 cookie 打一次
+  /// method channel，还会顺带初始化 WebView 的 CookieManager。
   static void setCookie() {
     accountManager = AccountManager();
     dio.interceptors.add(accountManager);
     Accounts.refresh();
-    LoginUtils.setWebCookie();
+  }
 
-    if (Accounts.main.isLogin) {
-      final coin = Pref.userInfoCache?.money;
-      if (coin == null) {
-        setCoin();
-      } else {
-        GlobalData().coins = coin;
+  /// 首帧之后补的 cookie / 余额同步（不影响首屏，启动期不再和首屏请求抢资源）
+  static void setCookieDeferred() {
+    // 这些都是"锦上添花"的初始化：同步抛异常、异步失败都不能影响主流程
+    try {
+      // 返回 FutureOr（Linux 上是 null），method channel 失败不能变成未捕获异常
+      final webCookie = LoginUtils.setWebCookie();
+      if (webCookie is Future) {
+        unawaited(webCookie.catchError((Object _) {}));
       }
-    }
+
+      if (Accounts.main.isLogin) {
+        final coin = Pref.userInfoCache?.money;
+        if (coin == null) {
+          unawaited(setCoin().catchError((Object _) {}));
+        } else {
+          GlobalData().coins = coin;
+        }
+      }
+    } catch (_) {}
   }
 
   static Future<void> setCoin() async {

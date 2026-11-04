@@ -522,14 +522,18 @@ class RefreshIndicatorState extends State<RefreshIndicator>
       position: _positionFactor,
       indicator: _status == null
           ? null
-          : AnimatedBuilder(
-              animation: _positionController,
-              builder: (context, child) => RefreshProgressIndicator(
-                value: showIndeterminateIndicator ? null : _value.value,
-                valueColor: _valueColor,
-                backgroundColor: widget.backgroundColor,
-                strokeWidth: widget.strokeWidth,
-                elevation: widget.elevation,
+          // 转圈自成一层的重绘边界：下拉/刷新期间它每帧都在重绘，
+          // 不加边界会把整条 scroll view 的绘制流程一起白跑一遍
+          : RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _positionController,
+                builder: (context, child) => RefreshProgressIndicator(
+                  value: showIndeterminateIndicator ? null : _value.value,
+                  valueColor: _valueColor,
+                  backgroundColor: widget.backgroundColor,
+                  strokeWidth: widget.strokeWidth,
+                  elevation: widget.elevation,
+                ),
               ),
             ),
     );
