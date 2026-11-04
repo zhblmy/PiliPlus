@@ -244,6 +244,25 @@ class _DisplayCornerClip extends StatelessWidget {
   6. 半径在 24 → 0 → 24 之间切换时页面 State 保持（计数器不重置），
      验证「只切 clip 属性、不增删 widget」不会丢状态。
 
+上述用例已固化为本地测试文件（**默认不进 Git**，见下方 .gitignore 说明）：
+
+- `test/widgets/page_transition_corner_test.dart`（5 个 `testWidgets`）
+- `test/utils/patch_probe.dart`（探测补丁是否已应用）
+
+运行：
+
+```powershell
+lib/scripts/patch.ps1 android
+flutter test test/widgets/page_transition_corner_test.dart
+```
+
+- **未打补丁时自动跳过**（`markTestSkipped`），不会误报失败；
+- 注意 `flutter test` 会跑 native assets 构建钩子（`cnativeapi` 等），本机需要
+  C 编译器（Windows 上是 MSVC），否则会在加载阶段失败——这与本改动无关，
+  仓库现有的 `test/utils/*` 同样受影响；
+- 由于 `.gitignore` 里有一条历史遗留的 `test*` 规则，新增的测试文件默认不被
+  Git 跟踪，需要 `git add -f`（或给 `.gitignore` 加反向规则）才能提交。
+
 实测「生效裁剪的页面集合」（finder 同时统计 offstage 子树）：
 
 | 采样点 | 结果 |
@@ -318,6 +337,8 @@ class _DisplayCornerClip extends StatelessWidget {
 | `lib/scripts/patch.ps1` | 补丁说明补充「按屏幕硬件圆角裁切（仅正在滑动的上页）」一句 |
 | `docs/PiliPlus-Android动画清单.md` | 1.3.1 节新增圆角条目，并补充旧补丁残留时的重置步骤 |
 | `docs/PiliPlus-Android屏幕圆角转场实现说明.md` | 本文（设计依据、实现、验证与风险） |
+| `test/widgets/page_transition_corner_test.dart` | 仓库内 widget 测试（未打补丁时自动跳过） |
+| `test/utils/patch_probe.dart` | 探测 getx 补丁是否已应用 |
 
 不改动：`pubspec.yaml`（不新增依赖）、`lib/utils/theme_utils.dart`
 （`pageTransitionsTheme` 对 GetX 无效）、`lib/main.dart`（无需全局裁剪）。
