@@ -1,1 +1,4 @@
 *.patch text eol=lf
+# Baseline profile is compared byte-for-byte by tool/gen_baseline_profile.ps1 -Check,
+# keep LF in the working tree even when core.autocrlf=true\.
+android/app/src/main/baseline-prof.txt text eol=lf
