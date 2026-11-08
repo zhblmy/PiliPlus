@@ -115,6 +115,25 @@ $jBattery = PluginJar 'battery_plus'
 $jDynamic = PluginJar 'dynamic_color'
 $jDisp    = PluginJar 'flutter_displaymode'
 $jLinks   = PluginJar 'app_links'
+# Every plugin listed in io/flutter/plugins/GeneratedPluginRegistrant.java needs its entry class
+# here. Keep this list in sync with that file: the guard further down fails the build of this
+# script if a registered plugin is missing, and reports which ones.
+$jPicker    = PluginJar 'android_file_picker'
+$jChat      = PluginJar 'chat_bottom_container'
+$jConn      = PluginJar 'connectivity_plus'
+$jWebview   = PluginJar 'flutter_inappwebview_android'
+$jLifecycle = PluginJar 'flutter_plugin_android_lifecycle'
+$jVolume    = PluginJar 'flutter_volume_controller'
+$jCrop      = PluginJar 'image_cropper'
+$jImgPicker = PluginJar 'image_picker_android'
+$jLivePhoto = PluginJar 'live_photo_maker'
+$jMkvLibs   = PluginJar 'media_kit_libs_android_video'
+$jOrient    = PluginJar 'native_device_orientation'
+$jPerm      = PluginJar 'permission_handler_android'
+$jSaver     = PluginJar 'saver_gallery'
+$jShare     = PluginJar 'share_plus'
+$jUrl       = PluginJar 'url_launcher_android'
+$jWake      = PluginJar 'wakelock_plus'
 
 # ---------------------------------------------------------------------------
 # Selected classes. f = flags (H/S/P); the L...; class descriptor is added by this script.
@@ -164,8 +183,9 @@ $groups = @(
         'io.flutter.embedding.engine.systemchannels.RestorationChannel'
         'io.flutter.embedding.engine.systemchannels.MouseCursorChannel'
         'io.flutter.embedding.engine.systemchannels.TextInputChannel'
-        'io.flutter.embedding.engine.systemchannels.ScribeChannel'
-        'io.flutter.embedding.engine.systemchannels.SensitiveContentChannel'
+        # ScribeChannel / SensitiveContentChannel are deliberately NOT listed: verified with
+        # build/app/outputs/mapping/release/mapping.txt that R8 removes both classes from the
+        # release DEX (no class-level mapping entry), so their rules never reach baseline.prof.
         'io.flutter.embedding.engine.systemchannels.BackGestureChannel'
         'io.flutter.embedding.engine.systemchannels.SpellCheckChannel'
         'io.flutter.embedding.engine.systemchannels.PlatformViewsChannel'
@@ -231,7 +251,30 @@ $groups = @(
         'com.llfbandit.app_links.AppLinksPlugin'
         'com.llfbandit.app_links.AppLinksHelper'
     ) }
+    # NOTE: media_kit's native library is deferred until after the first frame (S-02), but the
+    # plugin itself is still registered during FlutterEngine construction, so its entry class is
+    # HSP; VideoOutput / VideoOutputManager / Utils stay H (see the block below).
     @{ f = 'HSP'; cp = $jMkv; classes = @('com.alexmercerind.media_kit_video.MediaKitVideoPlugin') }
+
+    # Remaining registered plugins. GeneratedPluginRegistrant.registerWith() runs inside the
+    # FlutterEngine constructor, so every entry class executes onAttachedToEngine before the
+    # first frame. Only the entry class is listed; their feature classes are not.
+    @{ f = 'HSP'; cp = $jPicker; classes = @('com.mr.flutter.plugin.filepicker.FilePickerPlugin') }
+    @{ f = 'HSP'; cp = $jChat; classes = @('com.fsa.chat_bottom_container.ChatBottomContainerPlugin') }
+    @{ f = 'HSP'; cp = $jConn; classes = @('dev.fluttercommunity.plus.connectivity.ConnectivityPlugin') }
+    @{ f = 'HSP'; cp = $jWebview; classes = @('com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin') }
+    @{ f = 'HSP'; cp = $jLifecycle; classes = @('io.flutter.plugins.flutter_plugin_android_lifecycle.FlutterAndroidLifecyclePlugin') }
+    @{ f = 'HSP'; cp = $jVolume; classes = @('com.yosemiteyss.flutter_volume_controller.FlutterVolumeControllerPlugin') }
+    @{ f = 'HSP'; cp = $jCrop; classes = @('vn.hunghd.flutter.plugins.imagecropper.ImageCropperPlugin') }
+    @{ f = 'HSP'; cp = $jImgPicker; classes = @('io.flutter.plugins.imagepicker.ImagePickerPlugin') }
+    @{ f = 'HSP'; cp = $jLivePhoto; classes = @('com.example.live_photo_maker.LivePhotoMakerPlugin') }
+    @{ f = 'HSP'; cp = $jMkvLibs; classes = @('com.alexmercerind.media_kit_libs_android_video.MediaKitLibsAndroidVideoPlugin') }
+    @{ f = 'HSP'; cp = $jOrient; classes = @('com.github.rmtmckenzie.native_device_orientation.NativeDeviceOrientationPlugin') }
+    @{ f = 'HSP'; cp = $jPerm; classes = @('com.baseflow.permissionhandler.PermissionHandlerPlugin') }
+    @{ f = 'HSP'; cp = $jSaver; classes = @('com.mhz.savegallery.saver_gallery.SaverGalleryPlugin') }
+    @{ f = 'HSP'; cp = $jShare; classes = @('dev.fluttercommunity.plus.share.SharePlusPlugin') }
+    @{ f = 'HSP'; cp = $jUrl; classes = @('io.flutter.plugins.urllauncher.UrlLauncherPlugin') }
+    @{ f = 'HSP'; cp = $jWake; classes = @('dev.fluttercommunity.plus.wakelock.WakelockPlusPlugin') }
 
     # Used only after the first frame
     @{ f = 'H'; cp = $jMkv; classes = @(
@@ -239,7 +282,9 @@ $groups = @(
         'com.alexmercerind.media_kit_video.VideoOutputManager'
         'com.alexmercerind.media_kit_video.Utils'
     ) }
-    @{ f = 'H'; cp = $jBright; classes = @('com.aaassseee.screen_brightness_android.ScreenBrightnessAndroidPlugin') }
+    # screen_brightness: the *feature* is only used on video/live pages, but the plugin is still
+    # registered during engine construction, so its entry class is HSP (was wrongly H).
+    @{ f = 'HSP'; cp = $jBright; classes = @('com.aaassseee.screen_brightness_android.ScreenBrightnessAndroidPlugin') }
 
     # App's own Android layer
     # NOTE: BiliDocumentsProvider is a ContentProvider, created by the system BEFORE
@@ -252,8 +297,9 @@ $groups = @(
     # Only reached after the first frame:
     #   MediaHelper   -> PiP actions (AndroidHelper.updatePipActions / setPipActions)
     #   DownloadForegroundService -> started on the first download
-    # NOTE: AndroidHelper$ToDart is intentionally NOT listed: it is a static-only holder
-    # class that is never instantiated and has no <clinit>, so it has nothing to compile.
+    # NOTE: AndroidHelper$ToDart is intentionally NOT listed. javap shows it only has a private
+    # <init>()V and no <clinit> (all three fields are uninitialised statics); the class is never
+    # instantiated, so that single reachable method would never run.
     @{ f = 'H'; cp = $appCp; classes = @(
         'com.example.piliplus.MediaHelper'
         'com.example.piliplus.DownloadForegroundService'
@@ -272,6 +318,37 @@ foreach ($g in $groups) {
     }
 }
 if ($dupes.Count -gt 0) { throw "class listed in more than one group: $($dupes -join '; ')" }
+
+# ---------------------------------------------------------------------------
+# Every plugin registered by GeneratedPluginRegistrant must have its entry class in the profile.
+# This is exactly the gap that three review rounds missed (13 of 29 plugins were covered), so it
+# is enforced instead of relying on the reviewer remembering. Registrant is generated by the
+# Flutter tool; if it is absent (clean tree, no build yet) the check is skipped.
+# ---------------------------------------------------------------------------
+$pluginCoverage = 'n/a'
+$registrant = [IO.Path]::Combine($root, 'android', 'app', 'src', 'main', 'java', 'io', 'flutter',
+                                  'plugins', 'GeneratedPluginRegistrant.java')
+if (Test-Path $registrant) {
+    $registered = @(Get-Content $registrant |
+        Select-String -Pattern 'new ([A-Za-z0-9_.]+)\(\)' |
+        ForEach-Object { $_.Matches[0].Groups[1].Value })
+    $missing = @($registered | Where-Object { -not $seenClass.ContainsKey($_) })
+    if ($missing.Count -gt 0) {
+        throw ("plugin(s) registered in GeneratedPluginRegistrant but missing from the profile: " +
+               ($missing -join '; ') + ". Add the entry class with f = 'HSP' to the groups list.")
+    }
+    # Same defect in disguise: a registered entry class listed as H instead of HSP. Its
+    # onAttachedToEngine runs while the engine is constructed, i.e. before the first frame, so
+    # H-only silently leaves the startup phase uncovered (this is how screen_brightness slipped).
+    $wrongFlag = @($registered | Where-Object {
+        $seenClass.ContainsKey($_) -and $seenClass[$_] -ne 'HSP'
+    } | ForEach-Object { "$_ (flag $($seenClass[$_]))" })
+    if ($wrongFlag.Count -gt 0) {
+        throw ("plugin entry class(es) not flagged HSP: " + ($wrongFlag -join '; ') +
+               ". Registered plugins run onAttachedToEngine during engine construction.")
+    }
+    $pluginCoverage = $registered.Count
+}
 
 # ---------------------------------------------------------------------------
 # javap -> HRF
@@ -361,4 +438,5 @@ if ($Check) {
 $hsp = ($lines | Where-Object { $_ -like 'HSPL*' }).Count
 $h = ($lines | Where-Object { $_ -like 'HL*' }).Count
 Write-Host ("wrote {0}" -f $OutFile)
-Write-Host ("rules {0} (HSP {1} / H {2}), classes {3}, bytes {4}" -f $lines.Count, $hsp, $h, $classCount, (Get-Item $OutFile).Length)
+Write-Host ("rules {0} (HSP {1} / H {2}), classes {3}, bytes {4}, plugins {5}" -f `
+    $lines.Count, $hsp, $h, $classCount, (Get-Item $OutFile).Length, $pluginCoverage)
