@@ -14,6 +14,7 @@ import 'package:PiliPlus/http/msg.dart';
 import 'package:PiliPlus/pages/whisper_secondary/view.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
+import 'package:PiliPlus/utils/extension/rsp_session_msg_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
@@ -38,21 +39,28 @@ class WhisperSessionItem extends StatelessWidget {
   final ValueChanged<int> onRemove;
 
   Future<void> _updateAck(BuildContext context) async {
-    final talkerUid = item.id.privateId.talkerUid;
-    final res = await ImGrpc.sessionDetail(talkerId: talkerUid, sessionType: 1);
+    final talkerId = item.id.privateId.talkerUid.toInt();
+    // ack_seqno 要传「标到哪一条」即会话最新序号；会话对象里的 ackSeqno
+    // 是当前已读指针，回传它等于什么都没做
+    final res = await ImGrpc.syncFetchSessionMsgs(talkerId: talkerId);
     if (res case Success(:final response)) {
-      final res = await MsgHttp.ackSessionMsg(
-        talkerId: talkerUid.toInt(),
-        ackSeqno: response.ackSeqno.toInt(),
+      final ackSeqno = response.newestSeqno;
+      if (ackSeqno <= 0) {
+        SmartDialog.showToast('未获取到会话最新消息序号');
+        return;
+      }
+      final ackRes = await MsgHttp.ackSessionMsg(
+        talkerId: talkerId,
+        ackSeqno: ackSeqno,
       );
-      if (res.isSuccess) {
+      if (ackRes.isSuccess) {
         SmartDialog.showToast('已标为已读');
         item.clearUnread();
         if (context.mounted) {
           (context as Element).markNeedsBuild();
         }
       } else {
-        res.toast();
+        ackRes.toast();
       }
     } else {
       res.toast();

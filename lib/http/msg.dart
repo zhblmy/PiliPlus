@@ -18,6 +18,7 @@ import 'package:PiliPlus/models_new/upload_bfs/data.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/wbi_sign.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
 abstract final class MsgHttp {
   static Future<LoadingState<MsgReplyData>> msgFeedReplyMe({
@@ -343,6 +344,8 @@ abstract final class MsgHttp {
   }
 
   // 消息标记已读
+  // ackSeqno 是「把这条及之前的消息标为已读」，必须传会话最新一条的序号；
+  // 传当前已读指针（会话对象里的 ack_seqno）等于空操作
   static Future<LoadingState<void>> ackSessionMsg({
     required int talkerId,
     required int ackSeqno,
@@ -358,6 +361,13 @@ abstract final class MsgHttp {
       'csrf': csrf,
     });
     final res = await Request().get(Api.ackSessionMsg, queryParameters: params);
+    if (kDebugMode) {
+      // 便于核对实际发出的 ack_seqno 与服务端返回码
+      debugPrint(
+        'update_ack: talker_id=$talkerId ack_seqno=$ackSeqno '
+        'code=${res.data['code']} msg=${res.data['message']}',
+      );
+    }
     if (res.data['code'] == 0) {
       return const Success(null);
     } else {

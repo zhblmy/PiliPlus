@@ -9,6 +9,7 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/msg.dart';
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
 import 'package:PiliPlus/utils/accounts.dart';
+import 'package:PiliPlus/utils/extension/rsp_session_msg_ext.dart';
 import 'package:PiliPlus/utils/extension/scroll_controller_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:fixnum/fixnum.dart';
@@ -25,7 +26,8 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
   late final int? mid;
   late final bool isLive;
 
-  Int64? msgSeqno;
+  /// 向上翻页的游标：本页最旧一条消息的序号，不是已读位置
+  Int64? oldestSeqno;
 
   //表情转换图片规则
   List<EmotionInfo>? eInfos;
@@ -46,13 +48,16 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
   bool customHandleResponse(bool isRefresh, Success<RspSessionMsg> response) {
     List<Msg> msgs = response.response.messages;
     if (msgs.isNotEmpty) {
-      msgSeqno = msgs.last.msgSeqno;
+      // 消息按时间倒序返回，最后一条是本页最旧的一条
+      oldestSeqno = msgs.last.msgSeqno;
       if (msgs.length == 1 &&
           msgs.last.msgType == 18 &&
           msgs.last.msgSource == 18) {
         //{content: [{"text":"对方主动回复或关注你前，最多发送1条消息","color_day":"#9499A0","color_nig":"#9499A0"}]}
-      } else {
-        ackSessionMsg(msgs.last.msgSeqno.toInt());
+      } else if (isRefresh) {
+        // 翻页不重复标记已读；拿不到有效序号就别发，避免把已读位置写坏
+        final ackSeqno = response.response.newestSeqno;
+        if (ackSeqno > 0) ackSessionMsg(ackSeqno);
       }
       msgs.removeWhere((e) => e.msgType == MsgType.EN_MSG_TYPE_DRAW_BACK.value);
       eInfos ??= <EmotionInfo>[];
@@ -61,11 +66,11 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
     return false;
   }
 
-  // 消息标记已读
-  Future<void> ackSessionMsg(int msgSeqno) async {
+  // 消息标记已读，ackSeqno 必须是会话最新一条消息的序号
+  Future<void> ackSessionMsg(int ackSeqno) async {
     final res = await MsgHttp.ackSessionMsg(
       talkerId: talkerId,
-      ackSeqno: msgSeqno,
+      ackSeqno: ackSeqno,
     );
     if (!res.isSuccess) {
       res.toast();
@@ -150,7 +155,7 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
 
   @override
   Future<void> onRefresh() {
-    msgSeqno = null;
+    oldestSeqno = null;
     eInfos = null;
     scrollController.jumpToTop();
     return super.onRefresh();
@@ -160,8 +165,8 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
   Future<LoadingState<RspSessionMsg>> customGetData() =>
       ImGrpc.syncFetchSessionMsgs(
         talkerId: talkerId,
-        beginSeqno: msgSeqno != null ? Int64.ZERO : null,
-        endSeqno: msgSeqno,
+        beginSeqno: oldestSeqno != null ? Int64.ZERO : null,
+        endSeqno: oldestSeqno,
       );
 
   Future<LoadingState> onReport(Msg item, int reasonType, String reasonDesc) {
