@@ -1092,7 +1092,7 @@ class ReplyItemGrpc extends StatelessWidget {
     if (!_timeScanRegExp.hasMatch(content.message)) return null;
     try {
       return Get.find<VideoDetailController>(
-        tag: getTag?.call() ?? Get.arguments['heroTag'],
+        tag: getTag?.call() ?? Get.arguments?['heroTag'],
       ).data.timeLength;
     } catch (_) {
       return null;

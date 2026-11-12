@@ -75,7 +75,7 @@ mixin _LiveDMStreamMixin
     _dmRetryTimer?.cancel();
     _dmRetryTimer = Timer(_dmRetryDelay, () {
       _dmRetryTimer = null;
-      if (generation != _dmGeneration) return;
+      if (generation != _dmGeneration || isClosed) return;
       startLiveMsgStream();
     });
   }

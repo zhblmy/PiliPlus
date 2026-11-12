@@ -3,10 +3,10 @@ import 'package:PiliPlus/common/sliver_single_child_delegate.dart';
 import 'package:PiliPlus/common/style.dart';
 import 'package:PiliPlus/common/widgets/flutter/refresh_indicator.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
+import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scroll_behavior.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart';
 import 'package:PiliPlus/common/widgets/top_bar_inset.dart';
-import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_v.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/rcmd/controller.dart';
@@ -14,6 +14,7 @@ import 'package:PiliPlus/utils/grid.dart';
 import 'package:PiliPlus/utils/memory_budget.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -37,7 +38,8 @@ class _RcmdPageState extends State<RcmdPage>
   /// 决定了两件事：首帧连锁拉几页、以及划动时提前多远开始请求下一页。
   ///
   /// 一行约 98（卡片 90 + 间距 8），一次刷新给 20 条（约 10 行 980dp，
-  /// APP 接口每页 10 条、刷新时连拉两页，见 `RcmdController._appRefreshPages`）。
+  /// APP 接口每页 10 条、刷新时连拉两页，见 `RcmdController._appRefreshPages`；
+  /// 桌面端源一次 30 条，同样在这两个数量级内）。
   /// 取 700（约一屏）是按这两个数算过的折中：
   /// - 首帧连锁到第 4 页就停（40 条、约 3 屏内容，预建卡片约 28 张）；
   ///   原值 1200 会再多拉一页，冷启动时几十张缩略图一起抢带宽，
@@ -69,7 +71,7 @@ class _RcmdPageState extends State<RcmdPage>
             physics: const BouncingScrollPhysicsTopClamped(
               parent: AlwaysScrollableScrollPhysics(),
             ),
-            cacheExtent: _cacheExtent,
+            scrollCacheExtent: ScrollCacheExtent.pixels(_cacheExtent),
             slivers: [
               // 为首页的顶栏让出空间
               const TopBarInsetSpacer(),
