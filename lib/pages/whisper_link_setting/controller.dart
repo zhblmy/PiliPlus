@@ -11,8 +11,10 @@ import 'package:PiliPlus/models_new/msg/im_user_infos/datum.dart';
 import 'package:PiliPlus/models_new/msg/msg_dnd/uid_setting.dart';
 import 'package:PiliPlus/models_new/msg/session_ss/data.dart';
 import 'package:PiliPlus/utils/accounts.dart';
+import 'package:PiliPlus/utils/msg_session_mute.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/widgets.dart' show Text;
+import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 
 class WhisperLinkSettingController extends GetxController {
@@ -100,19 +102,41 @@ class WhisperLinkSettingController extends GetxController {
     }
   }
 
-  Future<void> setMute(bool isMuted) async {
-    int setting = isMuted ? 0 : 1;
+  /// [mute] 是目标状态：true = 开启免打扰，false = 关闭免打扰
+  Future<void> setMute(bool mute) async {
+    final setting = mute ? 1 : 0;
     final res = await MsgHttp.setMsgDnd(
       uid: Accounts.main.mid,
       setting: setting,
       dndUid: talkerUid,
     );
-    if (res.isSuccess) {
-      msgDnd
-        ..value.data!.first.setting = setting
-        ..refresh();
-    } else {
+    if (!res.isSuccess) {
       res.toast();
+      return;
+    }
+    // 写后读回核对：HTTP 写入与列表读回可能不一致，未确认前不改本地状态
+    final verifyRes = await MsgHttp.getMsgDnd(uidsStr: talkerUid);
+    final persisted = switch (verifyRes) {
+      Success(:final response) =>
+        response == null || response.isEmpty ? null : response.first.setting,
+      _ => null,
+    };
+    if (persisted != setting) {
+      MsgSessionMute.forget(talkerUid);
+      await getMsgDnd();
+      SmartDialog.showToast(
+        persisted == null ? '设置已提交，但未能确认服务端状态' : '免打扰状态尚未同步，请稍后重试',
+      );
+      return;
+    }
+    // 会话列表由 gRPC 读回，记住已确认的状态避免刷新时被旧值覆盖
+    MsgSessionMute.remember(talkerUid, mute);
+    final data = msgDnd.value.data;
+    if (data != null && data.isNotEmpty) {
+      data.first.setting = setting;
+      msgDnd.refresh();
+    } else {
+      await getMsgDnd();
     }
   }
 

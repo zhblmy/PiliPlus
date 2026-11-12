@@ -4,6 +4,8 @@ import 'package:PiliPlus/grpc/im.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/models_new/msg/msgfeed_unread.dart';
 import 'package:PiliPlus/pages/common/common_whisper_controller.dart';
+import 'package:PiliPlus/utils/accounts/account_manager/account_mgr.dart';
+import 'package:PiliPlus/utils/msg_session_mute.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -65,7 +67,9 @@ class WhisperController extends CommonWhisperController<SessionMainReply> {
   }
 
   Future<void> queryMsgFeedUnread() async {
-    final res = await ImGrpc.getTotalUnread(unreadType: 2);
+    final res = await AccountManager.silent(
+      () => ImGrpc.getTotalUnread(unreadType: 2),
+    );
     if (res case Success(:final response)) {
       final data = MsgFeedUnread.fromJson(response.msgFeedUnread.unread);
       final unreadCounts = [
@@ -77,8 +81,39 @@ class WhisperController extends CommonWhisperController<SessionMainReply> {
       if (!listEquals(this.unreadCounts, unreadCounts)) {
         this.unreadCounts.value = unreadCounts;
       }
-    } else {
-      res.toast();
+    }
+    // 失败不弹提示：这里也会被前台轮询调用，网络抖动时不应该反复打扰；
+    // 会话列表本身的刷新失败已经由列表层反馈
+  }
+
+  /// 用户是否已经往后翻过页。
+  ///
+  /// [quietRefresh] 只取第一页，直接替换列表会让已加载的后续页消失、列表变短，
+  /// 正在翻看历史的用户会被顶回顶部，所以翻过页时不做自动替换。
+  bool _loadedMore = false;
+
+  @override
+  Future<void> queryData([bool isRefresh = true]) {
+    if (!isRefresh && !isLoading && !isEnd) {
+      _loadedMore = true;
+    }
+    return super.queryData(isRefresh);
+  }
+
+  /// 自动刷新（前台轮询/回前台）：只有成功才替换列表，失败保留现有数据与分页状态，
+  /// 也不弹 toast。用户主动下拉刷新仍走 [onRefresh]。
+  Future<void> quietRefresh() async {
+    if (isLoading || _loadedMore) return;
+    isLoading = true;
+    try {
+      final res = await AccountManager.silent(ImGrpc.sessionMain);
+      if (res case final Success<SessionMainReply> success) {
+        customHandleResponse(true, success);
+        loadingState.value = Success(getDataList(success.response));
+        queryMsgFeedUnread();
+      }
+    } finally {
+      isLoading = false;
     }
   }
 
@@ -86,6 +121,8 @@ class WhisperController extends CommonWhisperController<SessionMainReply> {
   List<Session>? getDataList(SessionMainReply response) {
     offset = response.paginationParams.offsets;
     isEnd = !response.paginationParams.hasMore;
+    // 免打扰刚写入、SessionMain 尚未读回一致时，按已确认的本地状态展示
+    MsgSessionMute.apply(response.sessions);
     return response.sessions;
   }
 
@@ -108,6 +145,8 @@ class WhisperController extends CommonWhisperController<SessionMainReply> {
   @override
   Future<void> onRefresh() {
     offset = null;
+    // 手动刷新会重新拉第一页，自动刷新可以恢复
+    _loadedMore = false;
     queryMsgFeedUnread();
     return super.onRefresh();
   }

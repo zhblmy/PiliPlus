@@ -1,4 +1,5 @@
 // edit from package:dio_cookie_manager
+import 'dart:async';
 import 'dart:io';
 
 import 'package:PiliPlus/http/api.dart';
@@ -174,6 +175,8 @@ class AccountManager extends Interceptor {
     ];
     String url = err.requestOptions.uri.toString();
     if (kDebugMode) debugPrint('🌹🌹ApiInterceptor: $url\n$err');
+    // 静默范围绑定到发起请求的异步 Zone，不影响并发的用户请求
+    if (Zone.current[_silentZoneKey] == true) return;
     if (skipShow.any(url.contains) ||
         (url.contains('skipSegments') && err.requestOptions.method == 'GET')) {
       // skip
@@ -181,6 +184,12 @@ class AccountManager extends Interceptor {
       dioError(err).then((res) => SmartDialog.showToast(res + url));
     }
   }
+
+  static final Object _silentZoneKey = Object();
+
+  /// 在 [action] 期间屏蔽请求失败 toast（用于定时轮询，避免离线时反复打扰）
+  static Future<T> silent<T>(Future<T> Function() action) =>
+      runZoned(action, zoneValues: {_silentZoneKey: true});
 
   static Future<void> _saveCookies(Account account, Response response) async {
     final setCookies = response.headers[HttpHeaders.setCookieHeader];

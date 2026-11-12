@@ -9,6 +9,7 @@ import 'package:PiliPlus/common/widgets/route_aware_mixin.dart';
 import 'package:PiliPlus/models/common/nav_bar_config.dart';
 import 'package:PiliPlus/pages/home/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
+import 'package:PiliPlus/services/message_badge.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
 import 'package:PiliPlus/utils/app_scheme.dart';
 import 'package:PiliPlus/utils/desktop/tray_controller.dart';
@@ -96,15 +97,22 @@ class _MainAppState extends PopScopeState<MainApp>
     // 避免和转场收尾那一帧（整页首次实时绘制）抢帧
     runAfterRouteAnimation(() {
       _mainController
+        ..startMsgPolling()
+        // 返回主页是高频入口，沿用原有的 5 分钟节流；前台轮询本身每 60 秒
+        // 就会刷新，这里没必要每次 pop 都再发一轮请求
+        ..checkUnread(_mainController.useBottomNav)
         ..checkUnreadDynamic()
-        ..checkDefaultSearch(true)
-        ..checkUnread(_mainController.useBottomNav);
+        ..checkDefaultSearch(true);
+      if (_mainController.isMsgPageVisible) {
+        _mainController.refreshMsgPage(quiet: true);
+      }
     });
     super.didPopNext();
   }
 
   @override
   void didPushNext() {
+    _mainController.stopMsgPolling();
     removeObserverMobile(this);
     super.didPushNext();
   }
@@ -112,10 +120,23 @@ class _MainAppState extends PopScopeState<MainApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // 回前台立刻补一次未读，不再受 5 分钟节流影响；消息页可见时同步刷新会话列表
+      MessageBadge.reset();
       _mainController
+        ..queryUnreadMsg()
         ..checkUnreadDynamic()
-        ..checkDefaultSearch(true)
-        ..checkUnread(_mainController.useBottomNav);
+        ..checkDefaultSearch(true);
+      if (ModalRoute.of(context)?.isCurrent == true) {
+        _mainController.startMsgPolling();
+      }
+      if (_mainController.isMsgPageVisible) {
+        _mainController.refreshMsgPage(quiet: true);
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      // 后台不再轮询
+      _mainController.stopMsgPolling();
     }
   }
 

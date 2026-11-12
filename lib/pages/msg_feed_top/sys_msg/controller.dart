@@ -2,7 +2,10 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/msg.dart';
 import 'package:PiliPlus/models_new/msg/msg_sys/data.dart';
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
+import 'package:get/get.dart';
 
 class SysMsgController
     extends CommonListController<List<MsgSysItem>?, MsgSysItem> {
@@ -16,15 +19,23 @@ class SysMsgController
 
   @override
   void handleListResponse(List<MsgSysItem> dataList) {
+    if (dataList.isEmpty) return;
     if (cursor == null) {
-      msgSysUpdateCursor(dataList.first.cursor);
+      // 首次加载后上报已读游标；失败时不动本地未读，下次刷新 cursor 归零会重试
+      _ackCursor(dataList.first.cursor);
     }
     cursor = dataList.last.cursor;
   }
 
-  void msgSysUpdateCursor(int? cursor) {
-    if (cursor != null) {
-      MsgHttp.msgSysUpdateCursor(cursor);
+  Future<void> _ackCursor(int? cursor) async {
+    if (cursor == null) return;
+    final res = await MsgHttp.msgSysUpdateCursor(cursor);
+    if (res case Success()) {
+      if (Get.isRegistered<MainController>()) {
+        await Get.find<MainController>().queryUnreadMsg();
+      }
+    } else if (kDebugMode) {
+      debugPrint('sys-msg update_cursor failed: $res');
     }
   }
 

@@ -57,6 +57,8 @@ class LikeMeController
   Future<void> onRefresh() {
     cursor = null;
     cursorTime = null;
+    // 该控制器自己有 isEnd，不回退会导致刷新后仍无法继续翻页
+    isEnd = false;
     return super.onRefresh();
   }
 

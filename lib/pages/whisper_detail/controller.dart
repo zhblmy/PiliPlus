@@ -8,11 +8,14 @@ import 'package:PiliPlus/grpc/im.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/msg.dart';
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/utils/accounts.dart';
+import 'package:PiliPlus/utils/accounts/account_manager/account_mgr.dart';
 import 'package:PiliPlus/utils/extension/rsp_session_msg_ext.dart';
 import 'package:PiliPlus/utils/extension/scroll_controller_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:fixnum/fixnum.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -44,6 +47,113 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
     queryData();
   }
 
+  static const _syncInterval = Duration(seconds: 20);
+
+  /// 距离最新消息多少像素以内算「停在最新位置」
+  static const _latestThreshold = 64.0;
+
+  Timer? _syncTimer;
+  bool _syncEnabled = false;
+  bool _isSyncingLatest = false;
+  bool _syncWhenReachLatest = false;
+
+  /// 由页面生命周期控制：页面可见时才增量同步当前会话
+  void startSync() {
+    if (_syncTimer != null) return;
+    _syncEnabled = true;
+    _syncTimer = Timer.periodic(_syncInterval, (_) => _syncLatest());
+    scrollController.addListener(_onSyncScroll);
+  }
+
+  void stopSync() {
+    _syncEnabled = false;
+    _syncTimer?.cancel();
+    _syncTimer = null;
+    scrollController.removeListener(_onSyncScroll);
+  }
+
+  /// reverse 列表：偏移 0 就是最新消息
+  bool get _isAtLatest =>
+      !scrollController.hasClients ||
+      scrollController.position.pixels <= _latestThreshold;
+
+  void _onSyncScroll() {
+    if (_syncWhenReachLatest && _isAtLatest) {
+      _syncWhenReachLatest = false;
+      _syncLatest();
+    }
+  }
+
+  @override
+  void onClose() {
+    stopSync();
+    super.onClose();
+  }
+
+  /// 增量同步新消息。
+  ///
+  /// begin_seqno / end_seqno 的确切语义没有可核验的文档，这里固定取「最新一页」
+  /// （不带序号范围），再按序号只保留本地还没有的新消息，避免依赖未确认的参数。
+  Future<void> _syncLatest() async {
+    if (!_syncEnabled ||
+        _isSyncingLatest ||
+        isLoading ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    // 用户正在上翻看历史：插入新消息会把当前内容顶走，这些消息也还没被看到，
+    // 不应该在这里 ack。等回到最新位置再由滚动回调补一次。
+    if (!_isAtLatest) {
+      _syncWhenReachLatest = true;
+      return;
+    }
+    if (loadingState.value case Success(:final response)) {
+      // 列表还没加载出来时没有基准序号，等整页刷新
+      if (response == null || response.isEmpty) return;
+    } else {
+      return;
+    }
+    _isSyncingLatest = true;
+    try {
+      // 定时同步失败时不打扰用户，等下一次 tick
+      final res = await AccountManager.silent(
+        () => ImGrpc.syncFetchSessionMsgs(talkerId: talkerId),
+      );
+      if (res is! Success<RspSessionMsg>) return;
+      if (!_syncEnabled) return;
+      // 请求期间可能开始/完成了整页刷新：交给它的结果，避免合并进一张已被替换的列表
+      if (isLoading) return;
+      // 请求期间用户可能上翻；不要插入未读消息或将其 ack，等回到最新位置再同步
+      if (!_isAtLatest) {
+        _syncWhenReachLatest = true;
+        return;
+      }
+      if (loadingState.value case Success(:final response)) {
+        final List<Msg>? list = response;
+        if (list == null || list.isEmpty) return;
+        final newest = list.first.msgSeqno;
+        final fresh = res.response.messages
+            .where((e) => e.msgSeqno > newest)
+            .where((e) => e.msgType != MsgType.EN_MSG_TYPE_DRAW_BACK.value)
+            .toList();
+        if (fresh.isEmpty) return;
+        // 列表按时间倒序维护，index 0 是最新
+        fresh.sort((a, b) => b.msgSeqno.compareTo(a.msgSeqno));
+        // 新消息可能带新的表情资源，和首次加载一样合并进来
+        _mergeInfos(res.response.eInfos);
+        list.insertAll(0, fresh);
+        loadingState.refresh();
+        // 会话已读到最新，用服务端返回的最新序号 ack（与首次加载同一口径）
+        final ackSeqno = res.response.newestSeqno;
+        if (ackSeqno > 0) ackSessionMsg(ackSeqno);
+      }
+    } catch (error) {
+      if (kDebugMode) debugPrint('sync latest session messages failed: $error');
+    } finally {
+      _isSyncingLatest = false;
+    }
+  }
+
   @override
   bool customHandleResponse(bool isRefresh, Success<RspSessionMsg> response) {
     List<Msg> msgs = response.response.messages;
@@ -60,10 +170,23 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
         if (ackSeqno > 0) ackSessionMsg(ackSeqno);
       }
       msgs.removeWhere((e) => e.msgType == MsgType.EN_MSG_TYPE_DRAW_BACK.value);
-      eInfos ??= <EmotionInfo>[];
-      eInfos!.addAll(response.response.eInfos);
+      _mergeInfos(response.response.eInfos);
     }
     return false;
+  }
+
+  /// 合并表情资源。
+  ///
+  /// 每次拉取都会带回同一批表情，直接 `addAll` 会让列表随刷新和 20 秒增量同步
+  /// 无限增长，而每条消息渲染都要线性扫一遍，所以按 `text` 去重。
+  void _mergeInfos(Iterable<EmotionInfo> infos) {
+    if (infos.isEmpty) return;
+    final list = eInfos ??= <EmotionInfo>[];
+    for (final info in infos) {
+      if (!list.any((e) => e.text == info.text)) {
+        list.add(info);
+      }
+    }
   }
 
   // 消息标记已读，ackSeqno 必须是会话最新一条消息的序号
@@ -72,8 +195,14 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
       talkerId: talkerId,
       ackSeqno: ackSeqno,
     );
-    if (!res.isSuccess) {
-      res.toast();
+    if (res.isSuccess) {
+      // 服务端已确认已读，未读角标以服务端汇总为准
+      if (Get.isRegistered<MainController>()) {
+        Get.find<MainController>().queryUnreadMsg();
+      }
+    } else if (kDebugMode) {
+      // 自动 ack 由增量同步触发，失败时不打断用户，角标会保持未读
+      debugPrint('ack session msg failed: $res');
     }
   }
 
@@ -83,7 +212,6 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
     Map? picMsg,
     required VoidCallback onClearText,
     MsgType? msgType,
-    int? index,
   }) async {
     // debug
     // if (loadingState.value case Success(:final response)) {
@@ -110,39 +238,53 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
     // SmartDialog.showToast('发送成功');
     // return;
     assert((message != null) ^ (picMsg != null));
-    if (_isSending) return;
-    _isSending = true;
-    feedBack();
-    SmartDialog.dismiss();
+    // 登录检查放在加锁之前：早退时不能把发送锁留在持有状态
     if (!account.isLogin) {
       SmartDialog.showToast('请先登录');
       return;
     }
-    final res = await ImGrpc.sendMsg(
-      senderUid: account.mid,
-      receiverId: mid!,
-      content: msgType == .EN_MSG_TYPE_DRAW_BACK
-          ? message!
-          : jsonEncode(picMsg ?? {"content": message!}),
-      msgType:
-          msgType ?? (picMsg != null ? .EN_MSG_TYPE_PIC : .EN_MSG_TYPE_TEXT),
-    );
+    if (_isSending) return;
+    _isSending = true;
+    feedBack();
     SmartDialog.dismiss();
-    if (res.isSuccess) {
-      if (msgType == .EN_MSG_TYPE_DRAW_BACK) {
-        loadingState
-          ..value.data![index!].msgStatus = 1
-          ..refresh();
-        SmartDialog.showToast('撤回成功');
+    try {
+      final res = await ImGrpc.sendMsg(
+        senderUid: account.mid,
+        receiverId: mid!,
+        content: msgType == .EN_MSG_TYPE_DRAW_BACK
+            ? message!
+            : jsonEncode(picMsg ?? {"content": message!}),
+        msgType:
+            msgType ?? (picMsg != null ? .EN_MSG_TYPE_PIC : .EN_MSG_TYPE_TEXT),
+      );
+      SmartDialog.dismiss();
+      if (res.isSuccess) {
+        if (msgType == .EN_MSG_TYPE_DRAW_BACK) {
+          // 用 msgKey 定位撤回的那条：菜单打开期间增量同步可能插入新消息，
+          // 调用时捕获的 index 已经不可靠
+          final key = message;
+          final list = loadingState.value.data;
+          if (key != null && key.isNotEmpty && key != '0' && list != null) {
+            final i = list.indexWhere((e) => '${e.msgKey}' == key);
+            if (i != -1) {
+              list[i].msgStatus = 1;
+              loadingState.refresh();
+            }
+          }
+          SmartDialog.showToast('撤回成功');
+        } else {
+          onRefresh();
+          onClearText();
+          SmartDialog.showToast('发送成功');
+        }
       } else {
-        onRefresh();
-        onClearText();
-        SmartDialog.showToast('发送成功');
+        res.toast();
       }
-    } else {
-      res.toast();
+    } finally {
+      // 请求异常时也要收掉「正在发送」的加载态并复位发送锁
+      SmartDialog.dismiss();
+      _isSending = false;
     }
-    _isSending = false;
   }
 
   @override

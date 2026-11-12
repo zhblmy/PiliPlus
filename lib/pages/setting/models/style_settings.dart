@@ -32,12 +32,14 @@ import 'package:PiliPlus/pages/setting/widgets/ordered_multi_select_dialog.dart'
 import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
+import 'package:PiliPlus/services/message_badge.dart';
 import 'package:PiliPlus/utils/extension/file_ext.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/global_data.dart';
 import 'package:PiliPlus/utils/path_utils.dart';
+import 'package:PiliPlus/utils/permission_handler.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
@@ -257,6 +259,16 @@ List<SettingsModel> get styleSettings => [
     items: DynamicBadgeMode.values,
     onSelected: _setMsgBadge,
   ),
+  if (Platform.isAndroid)
+    const SwitchModel(
+      title: '桌面未读角标',
+      subtitle: '通过一条消息通知在桌面图标上显示未读数；需要通知权限',
+      leading: Icon(Icons.notifications_active_outlined),
+      setKey: SettingBoxKey.msgBadgeNotify,
+      defaultVal: true,
+      beforeChange: _requestMsgBadgePermission,
+      onChanged: _onMsgBadgeNotifyChanged,
+    ),
   NormalModel(
     onTap: _showMsgUnReadDialog,
     title: '消息未读类型',
@@ -772,13 +784,46 @@ void _setDynBadge(DynamicBadgeMode value, VoidCallback setState) {
 void _setMsgBadge(DynamicBadgeMode value, VoidCallback setState) {
   final mainController = Get.find<MainController>()..msgBadgeMode = value;
   if (value != DynamicBadgeMode.hidden) {
-    mainController.queryUnreadMsg(true);
+    // 切回可见时确保轮询在跑
+    mainController
+      ..startMsgPolling()
+      ..queryUnreadMsg(true);
   } else {
-    mainController.clearUnreadMsg();
+    // 隐藏 App 内角标不影响独立的桌面角标设置
+    if (Pref.enableMsgBadge) {
+      mainController.queryUnreadMsg();
+    } else {
+      mainController.clearUnreadMsg();
+    }
   }
   GStorage.setting
       .put(SettingBoxKey.msgBadgeMode, value.index)
       .whenComplete(setState);
+}
+
+Future<bool> _requestMsgBadgePermission(bool value) async {
+  if (!value) return true;
+  if (await Permission.notification.isGranted) return true;
+  final status = await Permission.notification.request();
+  if (status.isGranted) return true;
+  SmartDialog.showToast(
+    status.isPermanentlyDenied
+        ? '通知权限已被永久拒绝，请到系统设置中开启后再启用桌面角标'
+        : '未授予通知权限，桌面角标不会显示',
+  );
+  return false;
+}
+
+void _onMsgBadgeNotifyChanged(bool value) {
+  if (!value) {
+    MessageBadge.update(0);
+    return;
+  }
+  if (Get.isRegistered<MainController>()) {
+    // 权限已在开关落盘前确认，立即按当前未读数更新通知
+    MessageBadge.reset();
+    Get.find<MainController>().queryUnreadMsg();
+  }
 }
 
 Future<void> _showMsgUnReadDialog(

@@ -14,14 +14,15 @@ import 'package:PiliPlus/pages/home/controller.dart';
 import 'package:PiliPlus/pages/mine/view.dart';
 import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/services/account_service.dart';
+import 'package:PiliPlus/services/message_badge.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/iterable_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
+import 'package:PiliPlus/utils/msg_session_mute.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/update.dart';
-import 'package:collection/collection.dart';
 import 'package:easy_debounce/easy_throttle.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -71,6 +72,13 @@ class MainController extends GetxController
   late bool directExitOnBack = Pref.directExitOnBack;
 
   static const _period = 5 * 60 * 1000;
+
+  /// 前台未读检查间隔：角标与「消息」页会话列表共用
+  static const _msgPollInterval = Duration(seconds: 60);
+
+  Timer? _msgPollTimer;
+  bool _isRefreshingMsgPage = false;
+  bool _pendingManualMsgPageRefresh = false;
   late int _lastSelectTime = 0;
 
   @override
@@ -112,7 +120,8 @@ class MainController extends GetxController
     hasHome = navigationBars.contains(NavigationBarType.home);
     hasMsg = navigationBars.contains(NavigationBarType.msg);
     final checkMsgBadge =
-        msgBadgeMode != DynamicBadgeMode.hidden && (hasHome || hasMsg);
+        (msgBadgeMode != DynamicBadgeMode.hidden || Pref.enableMsgBadge) &&
+        (hasHome || hasMsg);
     if (checkMsgBadge) {
       lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
     }
@@ -126,10 +135,11 @@ class MainController extends GetxController
       }
       if (checkDynBadge) getUnreadDynamic();
       if (checkMsgBadge) queryUnreadMsg();
+      startMsgPolling();
     });
   }
 
-  Future<int> _msgUnread() async {
+  Future<int?> _msgUnread() async {
     if (msgUnReadTypes.contains(MsgUnReadType.pm)) {
       final res = await MsgHttp.msgUnread();
       if (res case Success(:final response)) {
@@ -140,11 +150,13 @@ class MainController extends GetxController
             response.unfollowPushMsg +
             response.customUnread;
       }
+      // 请求失败：返回 null，不要当成 0 把已有角标清掉
+      return null;
     }
     return 0;
   }
 
-  Future<int> _msgFeedUnread() async {
+  Future<int?> _msgFeedUnread() async {
     int count = 0;
     final remainTypes = Set<MsgUnReadType>.from(msgUnReadTypes)
       ..remove(MsgUnReadType.pm);
@@ -169,6 +181,8 @@ class MainController extends GetxController
               break;
           }
         }
+      } else {
+        return null;
       }
     }
     return count;
@@ -176,32 +190,58 @@ class MainController extends GetxController
 
   void clearUnreadMsg() {
     msgUnReadCount.value = null;
+    MessageBadge.update(0);
   }
 
+  bool _isQueryingUnread = false;
+  bool _pendingUnreadRefresh = false;
+  bool _pendingUnreadChangeType = false;
+
   Future<void> queryUnreadMsg([bool isChangeType = false]) async {
+    if (_isQueryingUnread) {
+      // 已读成功后需要立刻更新角标，不能因为上一轮未返回就丢掉这次刷新
+      _pendingUnreadRefresh = true;
+      _pendingUnreadChangeType = _pendingUnreadChangeType || isChangeType;
+      return;
+    }
     if (!accountService.isLogin.value ||
         !(hasHome || hasMsg) ||
         msgUnReadTypes.isEmpty ||
-        msgBadgeMode == DynamicBadgeMode.hidden) {
+        (msgBadgeMode == DynamicBadgeMode.hidden && !Pref.enableMsgBadge)) {
       clearUnreadMsg();
       return;
     }
 
-    final res = await Future.wait([_msgUnread(), _msgFeedUnread()]);
+    _isQueryingUnread = true;
+    try {
+      final counts = await Future.wait([_msgUnread(), _msgFeedUnread()]);
+      // 任一请求失败时保留上一次的角标，等下次轮询或用户操作再更新
+      if (counts.any((e) => e == null)) return;
+      final count = counts.fold<int>(0, (sum, e) => sum + e!);
 
-    final count = res.sum;
-
-    final countStr = count == 0
-        ? null
-        : count > 99
-        ? '99+'
-        : count.toString();
-    if (msgUnReadCount.value == countStr) {
-      if (isChangeType) {
-        msgUnReadCount.refresh();
+      final countStr = count == 0
+          ? null
+          : count > 99
+          ? '99+'
+          : count.toString();
+      if (msgUnReadCount.value == countStr) {
+        if (isChangeType) {
+          msgUnReadCount.refresh();
+        }
+      } else {
+        msgUnReadCount.value = countStr;
       }
-    } else {
-      msgUnReadCount.value = countStr;
+      // 记一次「刚查过」，避免 checkUnread 在轮询之后又重复发一次请求
+      lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
+      MessageBadge.update(count);
+    } finally {
+      _isQueryingUnread = false;
+      if (_pendingUnreadRefresh) {
+        _pendingUnreadRefresh = false;
+        final changeType = _pendingUnreadChangeType;
+        _pendingUnreadChangeType = false;
+        queryUnreadMsg(changeType);
+      }
     }
   }
 
@@ -295,7 +335,7 @@ class MainController extends GetxController
   void checkUnread([bool shouldCheck = false]) {
     if (accountService.isLogin.value &&
         (hasHome || hasMsg) &&
-        msgBadgeMode != DynamicBadgeMode.hidden) {
+        (msgBadgeMode != DynamicBadgeMode.hidden || Pref.enableMsgBadge)) {
       if (shouldCheck &&
           navigationBars[selectedIndex.value] != NavigationBarType.home) {
         return;
@@ -312,9 +352,9 @@ class MainController extends GetxController
   ///
   /// 底栏里有「消息」分类就直接切过去（不叠页面），没有才压一层 /whisper 路由。
   /// 首页 / 侧栏那个「消息」入口都走这里，逻辑只留一份。
+  ///
+  /// 这里只负责导航：未读角标以服务端已读汇总为准，打开列表本身不能算已读。
   void openMsgPage() {
-    clearUnreadMsg();
-    lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
     final int index = navigationBars.indexOf(NavigationBarType.msg);
     if (index != -1) {
       setIndex(index);
@@ -342,11 +382,65 @@ class MainController extends GetxController
 
   /// 消息页现在是常驻 Tab（keep-alive），只在第一次打开时 `onInit` 拉一次数据。
   ///
-  /// 但切进消息分类会立刻清掉未读角标——「角标清了、列表还是旧的」自相矛盾。
-  /// 以前每次都是 push 一个全新的 `/whisper`，天然就是新数据，这里补一次刷新。
-  void _refreshMsgPage() {
-    if (Get.isRegistered<WhisperController>()) {
-      Get.find<WhisperController>().onRefresh();
+  /// 进入消息分类、前台轮询、从详情返回后都要补一次刷新，否则「角标是新的、
+  /// 列表还是旧的」。
+  ///
+  /// [quiet] 用于定时/自动刷新：失败时不弹 toast，也不把已有列表替换成错误页。
+  Future<void> refreshMsgPage({bool quiet = false}) async {
+    if (!Get.isRegistered<WhisperController>()) {
+      return;
+    }
+    if (_isRefreshingMsgPage) {
+      _pendingManualMsgPageRefresh |= !quiet;
+      return;
+    }
+    _isRefreshingMsgPage = true;
+    try {
+      final controller = Get.find<WhisperController>();
+      if (quiet) {
+        await controller.quietRefresh();
+      } else {
+        await controller.onRefresh();
+      }
+    } finally {
+      _isRefreshingMsgPage = false;
+      if (_pendingManualMsgPageRefresh) {
+        _pendingManualMsgPageRefresh = false;
+        refreshMsgPage();
+      }
+    }
+  }
+
+  /// 「消息」分类当前是否可见（仅底栏常驻 Tab 场景）
+  bool get isMsgPageVisible =>
+      hasMsg && navigationBars[selectedIndex.value] == NavigationBarType.msg;
+
+  /// 前台时的周期检查：后台由 main/view 的生命周期回调暂停。
+  void startMsgPolling() {
+    if (_msgPollTimer != null || !(hasHome || hasMsg)) return;
+    _msgPollTimer = Timer.periodic(_msgPollInterval, (_) => _pollMsg());
+  }
+
+  void stopMsgPolling() {
+    _msgPollTimer?.cancel();
+    _msgPollTimer = null;
+  }
+
+  Future<void> _pollMsg() async {
+    if (!accountService.isLogin.value) return;
+    // 兜底：被路由覆盖期间 didPushNext 已停表，这里再挡一次后台状态
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final badgeVisible =
+        msgBadgeMode != DynamicBadgeMode.hidden || Pref.enableMsgBadge;
+    if (!badgeVisible && !isMsgPageVisible) return;
+    if (badgeVisible) {
+      await queryUnreadMsg();
+    }
+    // 消息页可见时连会话摘要一起更新；gRPC 请求在 quietRefresh 内部做了静默处理
+    if (isMsgPageVisible) {
+      await refreshMsgPage(quiet: true);
     }
   }
 
@@ -369,11 +463,8 @@ class MainController extends GetxController
       } else if (currentNav == NavigationBarType.dynamics) {
         setDynCount();
       } else if (currentNav == NavigationBarType.msg) {
-        // 打开消息分类即视为已读（和首页那个「消息」入口的行为一致），
-        // 顺带补一次刷新，让列表和「已读」对上
-        clearUnreadMsg();
-        lastCheckUnreadAt = DateTime.now().millisecondsSinceEpoch;
-        _refreshMsgPage();
+        // 只刷新列表，不清角标：角标等具体会话 ack 成功后由服务端汇总决定
+        refreshMsgPage();
       }
     } else {
       int now = DateTime.now().millisecondsSinceEpoch;
@@ -417,6 +508,7 @@ class MainController extends GetxController
 
   @override
   void onClose() {
+    stopMsgPolling();
     barOffset?.close();
     controller.dispose();
     super.onClose();
@@ -428,7 +520,10 @@ class MainController extends GetxController
       queryUnreadMsg();
       getUnreadDynamic();
     } else {
+      // 免打扰覆盖按账号隔离，退出登录后旧账号的记录已经没用
+      MsgSessionMute.clear();
       setDynCount();
+      clearUnreadMsg();
     }
   }
 }

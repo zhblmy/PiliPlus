@@ -11,6 +11,7 @@ import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart'
 import 'package:PiliPlus/grpc/im.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/msg.dart';
+import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/whisper_secondary/view.dart';
 import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -31,12 +32,16 @@ class WhisperSessionItem extends StatelessWidget {
     required this.onSetTop,
     required this.onSetMute,
     required this.onRemove,
+    this.onRefresh,
   });
 
   final Session item;
   final Function(bool isTop, SessionId id) onSetTop;
   final Function(bool isMuted, Int64 talkerUid) onSetMute;
   final ValueChanged<int> onRemove;
+
+  /// 从详情/子列表返回后刷新当前会话列表，避免摘要、排序停留在旧数据
+  final VoidCallback? onRefresh;
 
   Future<void> _updateAck(BuildContext context) async {
     final talkerId = item.id.privateId.talkerUid.toInt();
@@ -58,6 +63,10 @@ class WhisperSessionItem extends StatelessWidget {
         item.clearUnread();
         if (context.mounted) {
           (context as Element).markNeedsBuild();
+        }
+        // 未读角标以服务端汇总为准
+        if (Get.isRegistered<MainController>()) {
+          Get.find<MainController>().queryUnreadMsg();
         }
       } else {
         ackRes.toast();
@@ -81,6 +90,24 @@ class WhisperSessionItem extends StatelessWidget {
         : null;
 
     final theme = Theme.of(context);
+
+    // 未读标识：只要会话报告了未读就显示。
+    // 服务端可能只给「有未读」不给 style（或只给 number_show），
+    // 只看 style 会把这类会话的角标整个吞掉。
+    final unread = item.hasUnread() ? item.unread : null;
+    final showUnread =
+        unread != null &&
+        (unread.style != .UNREAD_STYLE_NONE ||
+            unread.number > 0 ||
+            unread.numberShow.isNotEmpty);
+    // style 明确是圆点时只显示圆点，不被历史 number 值带成数字
+    final unreadText = !showUnread || unread.style == .UNREAD_STYLE_DOT
+        ? null
+        : unread.numberShow.isNotEmpty
+        ? unread.numberShow
+        : unread.number > 0
+        ? unread.number.toString()
+        : null;
 
     return ListTile(
       safeArea: true,
@@ -187,15 +214,9 @@ class WhisperSessionItem extends StatelessWidget {
               ],
             )
           : null,
-      onTap: () {
-        if (item.hasUnread()) {
-          item.clearUnread();
-          if (context.mounted) {
-            (context as Element).markNeedsBuild();
-          }
-        }
+      onTap: () async {
         if (item.id.privateId.hasTalkerUid()) {
-          Get.toNamed(
+          await Get.toNamed(
             '/whisperDetail',
             arguments: {
               'talkerId': item.id.privateId.talkerUid.toInt(),
@@ -206,6 +227,8 @@ class WhisperSessionItem extends StatelessWidget {
               'isLive': item.sessionInfo.isLive,
             },
           );
+          // 详情页会按最新序号 ack 已读；返回后以服务端数据刷新摘要、未读与排序
+          onRefresh?.call();
           return;
         }
 
@@ -223,12 +246,13 @@ class WhisperSessionItem extends StatelessWidget {
             _ => null,
           };
           if (sessionPageType != null) {
-            Get.to(
+            await Get.to(
               WhisperSecPage(
                 name: item.sessionInfo.sessionName,
                 sessionPageType: sessionPageType,
               ),
             );
+            onRefresh?.call();
           } else {
             SmartDialog.showToast(item.id.foldId.type.name);
           }
@@ -238,7 +262,8 @@ class WhisperSessionItem extends StatelessWidget {
         if (item.id.hasSystemId()) {
           switch (item.id.systemId.type) {
             case .SESSION_TYPE_SYSTEM:
-              Get.toNamed('/sysMsg');
+              await Get.toNamed('/sysMsg');
+              onRefresh?.call();
             case .SESSION_TYPE_AI_FOLD:
             case .SESSION_TYPE_CUSTOMER_ACCOUNT:
             case .SESSION_TYPE_CUSTOMER_FOLD:
@@ -345,6 +370,7 @@ class WhisperSessionItem extends StatelessWidget {
         ],
       ),
       subtitle: Row(
+        spacing: 6,
         children: [
           Expanded(
             child: Text(
@@ -356,18 +382,16 @@ class WhisperSessionItem extends StatelessWidget {
               ),
             ),
           ),
+          // 免打扰和未读是两件事：被免打扰的会话同样可能有未读，
+          // 之前用 if/else 会让免打扰图标把未读角标顶掉
           if (item.isMuted)
             Icon(
               size: 16,
               Icons.notifications_off,
               color: theme.colorScheme.outline,
-            )
-          else if (item.hasUnread() && item.unread.style != .UNREAD_STYLE_NONE)
-            Badge(
-              label: item.unread.style == .UNREAD_STYLE_NUMBER
-                  ? Text(item.unread.number.toString())
-                  : null,
             ),
+          if (showUnread)
+            Badge(label: unreadText == null ? null : Text(unreadText)),
         ],
       ),
     );

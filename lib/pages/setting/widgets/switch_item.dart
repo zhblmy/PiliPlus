@@ -11,6 +11,7 @@ class SetSwitchItem extends StatefulWidget {
   final String setKey;
   final bool defaultVal;
   final ValueChanged<bool>? onChanged;
+  final Future<bool> Function(bool value)? beforeChange;
   final bool needReboot;
   final Widget? leading;
   final void Function(BuildContext context)? onTap;
@@ -25,6 +26,7 @@ class SetSwitchItem extends StatefulWidget {
     required this.setKey,
     this.defaultVal = false,
     this.onChanged,
+    this.beforeChange,
     this.needReboot = false,
     this.leading,
     this.onTap,
@@ -59,20 +61,25 @@ class _SetSwitchItemState extends State<SetSwitchItem> {
   }
 
   Future<void> switchChange([bool? value]) async {
-    val = value ?? !val;
+    var nextValue = value ?? !val;
 
-    if (val && widget.setKey == SettingBoxKey.badCertificateCallback) {
-      val = await showConfirmDialog(
+    if (nextValue && widget.setKey == SettingBoxKey.badCertificateCallback) {
+      nextValue = await showConfirmDialog(
         context: context,
         title: const Text('确定禁用 SSL 证书验证？'),
         content: const Text('禁用容易受到中间人攻击'),
       );
-      if (!val) return;
+      if (!nextValue) return;
     }
 
-    await GStorage.setting.put(widget.setKey, val);
+    if (widget.beforeChange != null && !await widget.beforeChange!(nextValue)) {
+      return;
+    }
 
-    widget.onChanged?.call(val);
+    val = nextValue;
+    await GStorage.setting.put(widget.setKey, nextValue);
+
+    widget.onChanged?.call(nextValue);
     if (widget.needReboot) SmartDialog.showToast('重启生效');
     if (mounted) setState(() {});
   }

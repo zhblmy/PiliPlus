@@ -8,6 +8,26 @@ abstract final class DateFormatUtils {
   static final longFormatDs = DateFormat('yyyy-MM-dd HH:mm:ss');
   static final only0_9 = DateFormat('yyyyMMddHHmmss');
 
+  /// 相邻消息间隔超过该秒数时重新显示时间标签
+  static const chatTimeGap = 180;
+
+  /// 消息列表按时间倒序渲染时，判断当前消息是否显示时间标签。
+  ///
+  /// 每段连续消息只在最早一条显示；[olderTimestamp] 为时间上更早的相邻消息，
+  /// 为 null 表示当前就是最早一条。跨天时额外确保新的一天有日期分隔。
+  static bool showChatTime({
+    required int timestamp,
+    required int? olderTimestamp,
+  }) {
+    if (olderTimestamp == null) return true;
+    if ((timestamp - olderTimestamp).abs() > chatTimeGap) return true;
+    final newer = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+    final older = DateTime.fromMillisecondsSinceEpoch(olderTimestamp * 1000);
+    return newer.year != older.year ||
+        newer.month != older.month ||
+        newer.day != older.day;
+  }
+
   // U-08：相对时间在列表里会被「每一项、每一次 build」重算。这里按当前分钟整体失效地
   // 做一层结果缓存，省掉重复的 DateTime 运算与字符串拼接（跨分钟才重算，不会显示过期文案）。
   static final Map<String, String> _relativeCache = {};

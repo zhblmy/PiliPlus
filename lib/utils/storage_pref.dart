@@ -169,6 +169,10 @@ abstract final class Pref {
         defaultValue: DynamicBadgeMode.number.index,
       )];
 
+  /// 桌面未读角标（Android 通知 setNumber），默认开启
+  static bool get enableMsgBadge =>
+      _setting.get(SettingBoxKey.msgBadgeNotify, defaultValue: true);
+
   static Set<MsgUnReadType> get msgUnReadTypeV2 =>
       (_setting.get(SettingBoxKey.msgUnReadTypeV2) as List?)
           ?.map((index) => MsgUnReadType.values[index])

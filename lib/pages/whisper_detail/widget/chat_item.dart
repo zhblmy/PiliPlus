@@ -38,6 +38,7 @@ class ChatItem extends StatelessWidget {
     required this.onLongPress,
     required this.onSecondaryTapUp,
     required this.isOwner,
+    this.showTime = true,
   });
 
   final Msg item;
@@ -45,6 +46,9 @@ class ChatItem extends StatelessWidget {
   final VoidCallback onLongPress;
   final GestureTapUpCallback? onSecondaryTapUp;
   final bool isOwner;
+
+  /// 与相邻消息间隔不足 3 分钟的连续消息不重复显示时间
+  final bool showTime;
 
   // 消息来源
   // enum MsgSource {
@@ -65,14 +69,32 @@ class ChatItem extends StatelessWidget {
     late final Color textColor = isOwner
         ? theme.colorScheme.onSecondaryContainer
         : theme.colorScheme.onSurface;
-    late final dynamic content = jsonDecode(item.content);
 
-    Widget child = messageContent(
-      context: context,
-      theme: theme,
-      content: content,
-      textColor: textColor,
-    );
+    // 撤回 / 系统撤回的消息不再渲染原文，否则本地残留内容会继续显示
+    final isWithdrawn = item.msgStatus == 1 || item.sysCancel;
+    dynamic content;
+    var decoded = false;
+    if (!isWithdrawn) {
+      // 空内容或格式变化时不能让单条消息把整页构建打挂
+      try {
+        content = jsonDecode(item.content);
+        decoded = true;
+      } catch (_) {}
+    }
+
+    Widget child = isWithdrawn || !decoded
+        ? Text(
+            isWithdrawn ? '消息已撤回' : '暂不支持的消息',
+            style: theme.textTheme.bodyMedium!.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          )
+        : messageContent(
+            context: context,
+            theme: theme,
+            content: content,
+            textColor: textColor,
+          );
 
     final isSystem =
         msgType == MsgType.EN_MSG_TYPE_VIDEO_CARD.value ||
@@ -114,13 +136,6 @@ class ChatItem extends StatelessWidget {
               children: [
                 child,
                 isPic ? const SizedBox(height: 7) : const SizedBox(height: 2),
-                if (item.msgStatus == 1)
-                  Text(
-                    '  已撤回',
-                    style: theme.textTheme.labelSmall!.copyWith(
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                  ),
                 if (item.msgSource >= 8 && item.msgSource <= 11) ...[
                   Divider(
                     height: 10,
@@ -143,14 +158,15 @@ class ChatItem extends StatelessWidget {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 18),
-          child: Text(
-            DateFormatUtils.chatFormat(item.timestamp.toInt()),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: theme.colorScheme.outline),
+        if (showTime)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 18),
+            child: Text(
+              DateFormatUtils.chatFormat(item.timestamp.toInt()),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.colorScheme.outline),
+            ),
           ),
-        ),
         GestureDetector(
           behavior: .opaque,
           onLongPress: onLongPress,

@@ -116,11 +116,11 @@ class _WhisperSecPageState extends State<WhisperSecPage> {
               final item = response[index];
               return WhisperSessionItem(
                 item: item,
-                onSetTop: (isTop, talkerId) =>
-                    _controller.onSetTop(item, index, isTop, talkerId),
+                onSetTop: _controller.onSetTop,
                 onSetMute: (isMuted, talkerUid) =>
                     _controller.onSetMute(item, isMuted, talkerUid),
-                onRemove: (talkerId) => _controller.onRemove(index, talkerId),
+                onRemove: _controller.onRemove,
+                onRefresh: _controller.onRefresh,
               );
             },
             separatorBuilder: (context, index) => divider,

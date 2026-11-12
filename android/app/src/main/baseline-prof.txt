@@ -1867,6 +1867,8 @@ HSPLcom/example/piliplus/MainActivity;->onCreate(Landroid/os/Bundle;)V
 HSPLcom/example/piliplus/MainActivity;->onUserLeaveHint()V
 HSPLcom/example/piliplus/MainActivity;->onPictureInPictureModeChanged(ZLandroid/content/res/Configuration;)V
 HSPLcom/example/piliplus/MainActivity;->configureFlutterEngine$lambda$0(Lcom/example/piliplus/MainActivity;Lio/flutter/plugin/common/MethodCall;Lio/flutter/plugin/common/MethodChannel$Result;)V
+HSPLcom/example/piliplus/MainActivity;->configureFlutterEngine$lambda$1(Lcom/example/piliplus/MainActivity;Lio/flutter/plugin/common/MethodCall;Lio/flutter/plugin/common/MethodChannel$Result;)V
+HSPLcom/example/piliplus/MainActivity;-><clinit>()V
 HSPLcom/example/piliplus/AndroidHelper;-><init>()V
 HSPLcom/example/piliplus/AndroidHelper;->getContext()Landroid/content/Context;
 HSPLcom/example/piliplus/AndroidHelper;->sdkInt()I

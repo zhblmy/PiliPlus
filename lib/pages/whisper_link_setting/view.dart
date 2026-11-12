@@ -240,15 +240,14 @@ class _WhisperLinkSettingPageState extends State<WhisperLinkSettingPage> {
         response != null && response.isNotEmpty
             ? ListTile(
                 dense: true,
-                onTap: () => _controller.setMute(response.first.setting == 1),
+                onTap: () => _controller.setMute(response.first.setting != 1),
                 title: const Text('消息免打扰', style: TextStyle(fontSize: 14)),
                 trailing: Transform.scale(
                   alignment: Alignment.centerRight,
                   scale: 0.8,
                   child: Switch(
                     value: response.first.setting == 1,
-                    onChanged: (value) =>
-                        _controller.setMute(response.first.setting == 1),
+                    onChanged: _controller.setMute,
                   ),
                 ),
               )

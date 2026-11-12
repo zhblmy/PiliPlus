@@ -3,6 +3,7 @@ import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart'
 import 'package:PiliPlus/grpc/im.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/common/common_whisper_controller.dart';
+import 'package:PiliPlus/utils/msg_session_mute.dart';
 import 'package:get/get.dart';
 import 'package:protobuf/protobuf.dart' show PbMap;
 
@@ -36,6 +37,8 @@ class WhisperSecController
     }
     offset = response.paginationParams.offsets;
 
+    // 免打扰刚写入、会话列表尚未读回一致时，按已确认的本地状态展示
+    MsgSessionMute.apply(response.sessions);
     return response.sessions;
   }
 

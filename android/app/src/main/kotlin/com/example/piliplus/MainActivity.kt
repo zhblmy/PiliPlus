@@ -45,6 +45,20 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // 消息未读桌面角标：Dart 侧只传未读总数，权限/渠道/失败都在原生侧兜底
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            MESSAGE_BADGE_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setCount" -> result.success(
+                    MessageBadge.update(this, call.argument<Int>("count") ?: 0),
+                )
+
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -72,5 +86,9 @@ class MainActivity : AudioServiceActivity() {
         AndroidHelper.isPipMode = isInPictureInPictureMode
         // 通知 Dart 侧：PiP 期间需要降载（降刷新率、关超分），退出后还原
         AndroidHelper.ToDart.onPipModeChanged?.run()
+    }
+
+    companion object {
+        private const val MESSAGE_BADGE_CHANNEL = "piliplus/message_badge"
     }
 }

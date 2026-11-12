@@ -7,6 +7,8 @@ import 'package:PiliPlus/common/widgets/flutter/chat_list_view.dart';
 import 'package:PiliPlus/common/widgets/flutter/text_field/text_field.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/loading_widget/loading_widget.dart';
+import 'package:PiliPlus/common/widgets/route_aware_mixin.dart'
+    show RouteAwareMixin;
 import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart'
     show platformAlwaysClampingPhysics;
@@ -19,6 +21,7 @@ import 'package:PiliPlus/pages/emote/view.dart';
 import 'package:PiliPlus/pages/whisper_detail/controller.dart';
 import 'package:PiliPlus/pages/whisper_detail/widget/chat_item.dart';
 import 'package:PiliPlus/pages/whisper_link_setting/view.dart';
+import 'package:PiliPlus/utils/date_utils.dart';
 import 'package:PiliPlus/utils/extension/file_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
@@ -45,11 +48,37 @@ class WhisperDetailPage extends CommonRichTextPubPage {
 }
 
 class _WhisperDetailPageState
-    extends CommonRichTextPubPageState<WhisperDetailPage> {
+    extends CommonRichTextPubPageState<WhisperDetailPage>
+    with RouteAware, RouteAwareMixin {
   final _whisperDetailController = Get.put(
     WhisperDetailController(),
     tag: Utils.makeHeroTag(Get.parameters['talkerId']),
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _whisperDetailController.startSync();
+  }
+
+  @override
+  void dispose() {
+    // 页面生命周期结束就停掉增量同步，避免控制器实例被缓存后继续请求
+    _whisperDetailController.stopSync();
+    super.dispose();
+  }
+
+  @override
+  void didPushNext() {
+    _whisperDetailController.stopSync();
+    super.didPushNext();
+  }
+
+  @override
+  void didPopNext() {
+    runAfterRouteAnimation(_whisperDetailController.startSync);
+    super.didPopNext();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,13 +199,21 @@ class _WhisperDetailPageState
                   final isOwner =
                       item.senderUid.toInt() ==
                       _whisperDetailController.account.mid;
+                  // 列表按时间倒序：index + 1 是时间上更早的相邻消息，每段连续消息
+                  // 只在最早一条显示时间，避免新消息到达后把上一段的标签顶掉
+                  final showTime = DateFormatUtils.showChatTime(
+                    timestamp: item.timestamp.toInt(),
+                    olderTimestamp: index < response.length - 1
+                        ? response[index + 1].timestamp.toInt()
+                        : null,
+                  );
                   return ChatItem(
                     item: item,
+                    showTime: showTime,
                     eInfos: _whisperDetailController.eInfos,
-                    onLongPress: () => onLongPress(index, item, isOwner),
+                    onLongPress: () => onLongPress(item, isOwner),
                     onSecondaryTapUp: PlatformUtils.isDesktop
-                        ? (e) =>
-                              _showMenu(e.globalPosition, index, item, isOwner)
+                        ? (e) => _showMenu(e.globalPosition, item, isOwner)
                         : null,
                     isOwner: isOwner,
                   );
@@ -192,7 +229,7 @@ class _WhisperDetailPageState
     };
   }
 
-  void _showMenu(Offset offset, int index, Msg item, bool isOwner) {
+  void _showMenu(Offset offset, Msg item, bool isOwner) {
     showMenu(
       context: context,
       position: PageUtils.menuPosition(offset),
@@ -204,7 +241,6 @@ class _WhisperDetailPageState
               message: '${item.msgKey}',
               onClearText: editController.clear,
               msgType: .EN_MSG_TYPE_DRAW_BACK,
-              index: index,
             ),
             child: const Text('撤回', style: TextStyle(fontSize: 14)),
           )
@@ -230,7 +266,7 @@ class _WhisperDetailPageState
     );
   }
 
-  void onLongPress(int index, Msg item, bool isOwner) {
+  void onLongPress(Msg item, bool isOwner) {
     Feedback.forLongPress(context);
     showDialog(
       context: context,
@@ -245,7 +281,6 @@ class _WhisperDetailPageState
                     message: '${item.msgKey}',
                     onClearText: editController.clear,
                     msgType: .EN_MSG_TYPE_DRAW_BACK,
-                    index: index,
                   );
                 },
                 dense: true,

@@ -10,6 +10,7 @@ import 'package:PiliPlus/pages/contact/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/pages/whisper/widgets/item.dart';
+import 'package:PiliPlus/services/message_badge.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/three_dot_ext.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -40,6 +41,10 @@ class _WhisperPageState extends State<WhisperPage>
     _mainController = Get.isRegistered<MainController>()
         ? Get.find<MainController>()
         : null;
+    // 桌面角标默认开启：首次进入消息页时补一次通知权限申请
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MessageBadge.ensurePermission();
+    });
   }
 
   /// 作为底栏分类使用时和别的 Tab 一样：内容上滑收起底栏、下滑弹出。
@@ -175,11 +180,11 @@ class _WhisperPageState extends State<WhisperPage>
               final item = response[index];
               return WhisperSessionItem(
                 item: item,
-                onSetTop: (isTop, id) =>
-                    _controller.onSetTop(item, index, isTop, id),
+                onSetTop: _controller.onSetTop,
                 onSetMute: (isMuted, talkerUid) =>
                     _controller.onSetMute(item, isMuted, talkerUid),
-                onRemove: (talkerId) => _controller.onRemove(index, talkerId),
+                onRemove: _controller.onRemove,
+                onRefresh: _controller.onRefresh,
               );
             },
             separatorBuilder: (context, index) => divider,
@@ -242,13 +247,14 @@ class _WhisperPageState extends State<WhisperPage>
                   ],
                 ),
               ),
-              onTap: () {
+              onTap: () async {
                 if (!item.enabled) {
                   SmartDialog.showToast('已禁用');
                   return;
                 }
-                _controller.unreadCounts[index] = 0;
-                Get.toNamed(item.route);
+                await Get.toNamed(item.route);
+                // 分类未读数以服务端为准：不在跳转前本地清零，返回后重新拉取
+                _controller.queryMsgFeedUnread();
               },
             );
           }),
