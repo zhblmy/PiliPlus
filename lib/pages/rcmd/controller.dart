@@ -40,6 +40,10 @@ class RcmdController extends CommonListController with RefreshImplMixin {
 
   @override
   Future<void> onLoadMore() {
+    // 首屏没有可用内容（刷新失败且没有旧数据）时，滚动触发的「加载更多」拿到的
+    // 是第 2 页起的数据，而 queryData 只在已有 Success 列表时才追加 —— 这一页会
+    // 被直接丢掉。这种情况按刷新处理更有意义。
+    if (loadingState.value is! Success) return onRefresh();
     // 首屏请求失败、但缓存/旧数据还在时 page 仍是 0。此时「加载更多」必须跳过
     // 第一页，否则 APP 端会用 freshIdx=0 + pull=true 把第一页再追加一遍。
     // isLoading 期间不能动 page —— 那是首次请求还在路上。
