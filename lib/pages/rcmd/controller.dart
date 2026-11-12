@@ -1,20 +1,26 @@
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/video.dart';
+import 'package:PiliPlus/models/common/rcmd_source.dart';
 import 'package:PiliPlus/models/home/rcmd/result.dart';
 import 'package:PiliPlus/models/model_rec_video_item.dart';
+import 'package:PiliPlus/pages/common/common_controller.dart'
+    show RefreshImplMixin;
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
 import 'package:PiliPlus/pages/rcmd/rcmd_cache.dart';
 import 'package:PiliPlus/utils/accounts.dart';
+import 'package:PiliPlus/utils/extension/scroll_controller_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
-class RcmdController extends CommonListController {
+class RcmdController extends CommonListController with RefreshImplMixin {
   /// 一次刷新要凑够的条数：APP 接口每页固定 10 条，所以要连着拉两页；
-  /// web 接口能直接给 20 条，一次请求即可。
+  /// web / 桌面端接口能一次给够，单次请求即可。
   static const int _appRefreshPages = 2;
 
   late bool enableSaveLastData = Pref.enableSaveLastData;
-  final bool appRcmd = Pref.appRcmd;
+
+  /// 可在设置页切换后立即生效，无需重启
+  RcmdSource rcmdSource = Pref.rcmdSource;
 
   int? lastRefreshAt;
   late bool savedRcmdTip = Pref.savedRcmdTip;
@@ -47,9 +53,9 @@ class RcmdController extends CommonListController {
     page = 0;
     if (enableSaveLastData) {
       final cached = RcmdCache.read(
-        src: appRcmd ? 'app' : 'web',
+        src: rcmdSource.name,
         mid: Accounts.main.mid,
-        parse: appRcmd
+        parse: rcmdSource == RcmdSource.app
             ? VideoHttp.parseAppRcmdItems
             : VideoHttp.parseWebRcmdItems,
       );
@@ -72,18 +78,30 @@ class RcmdController extends CommonListController {
     if (page == 0) return _fetchRefresh();
 
     _refreshPageSpan = 1;
-    return appRcmd
-        ? VideoHttp.rcmdVideoListApp(freshIdx: page)
-        : VideoHttp.rcmdVideoList(freshIdx: page, ps: 20);
+    return switch (rcmdSource) {
+      RcmdSource.app => VideoHttp.rcmdVideoListApp(freshIdx: page),
+      // 桌面端：与官方 Windows 客户端一致，每次请求 30 条
+      RcmdSource.desktop => VideoHttp.rcmdVideoList(
+        freshIdx: page,
+        ps: 30,
+        desktop: true,
+      ),
+      RcmdSource.web => VideoHttp.rcmdVideoList(freshIdx: page, ps: 20),
+    };
   }
 
-  /// 刷新（`freshIdx == 0`）：一次凑够 20 条。
+  /// 刷新（`freshIdx == 0`）：一次凑够首屏内容。
+  ///
+  /// - APP：10 条/页，两页并行发再合并去重（总延迟约等于一页）
+  /// - web / 桌面端：单次请求就给足（20 / 30 条）
   Future<LoadingState> _fetchRefresh() async {
-    if (!appRcmd) {
+    if (rcmdSource != RcmdSource.app) {
       _refreshPageSpan = 1;
+      final desktop = rcmdSource == RcmdSource.desktop;
       return VideoHttp.rcmdVideoList(
         freshIdx: 0,
-        ps: 20,
+        ps: desktop ? 30 : 20,
+        desktop: desktop,
         onRawItems: (items) => _cacheRaw(items, 1),
       );
     }
@@ -171,7 +189,7 @@ class RcmdController extends CommonListController {
   void _cacheRaw(List items, int pages) {
     if (!enableSaveLastData) return;
     RcmdCache.write(
-      src: appRcmd ? 'app' : 'web',
+      src: rcmdSource.name,
       mid: Accounts.main.mid,
       items: items,
       pages: pages,
@@ -251,5 +269,10 @@ class RcmdController extends CommonListController {
       // 把另一批内容追加到旧列表后面。
       if (page == 0) page = prevPage;
     }
+  }
+
+  void toTopAndRefresh() {
+    scrollController.jumpToTop();
+    showRefresh();
   }
 }

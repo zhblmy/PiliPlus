@@ -6,11 +6,13 @@ import 'package:PiliPlus/common/widgets/loading_widget/http_error.dart';
 import 'package:PiliPlus/common/widgets/scroll_behavior.dart';
 import 'package:PiliPlus/common/widgets/scroll_physics.dart';
 import 'package:PiliPlus/common/widgets/top_bar_inset.dart';
+import 'package:PiliPlus/common/widgets/scaffold/simple_scaffold.dart';
 import 'package:PiliPlus/common/widgets/video_card/video_card_v.dart';
 import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/pages/rcmd/controller.dart';
 import 'package:PiliPlus/utils/grid.dart';
 import 'package:PiliPlus/utils/memory_budget.dart';
+import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -50,11 +52,12 @@ class _RcmdPageState extends State<RcmdPage>
   Widget build(BuildContext context) {
     super.build(context);
     final colorScheme = ColorScheme.of(context);
-    return Container(
+    final child = Container(
       clipBehavior: .hardEdge,
       margin: const .symmetric(horizontal: Style.safeSpace),
       decoration: const BoxDecoration(borderRadius: Style.mdRadius),
       child: refreshIndicator(
+        key: controller.refreshKey,
         onRefresh: controller.onRefresh,
         // 下拉越界被顶部夹紧，内容不会位移；也不叠加 Android 的拉伸指示器
         child: ScrollConfiguration(
@@ -84,6 +87,25 @@ class _RcmdPageState extends State<RcmdPage>
         ),
       ),
     );
+    if (PlatformUtils.isDesktop && Pref.showRefreshFAB) {
+      return ScaffoldLayout(
+        body: child,
+        fab: Padding(
+          padding: const .only(
+            right: kFloatingActionButtonMargin,
+            bottom: 80 + kFloatingActionButtonMargin,
+          ),
+          child: FloatingActionButton(
+            tooltip: '刷新',
+            onPressed: controller.toTopAndRefresh,
+            backgroundColor: colorScheme.secondaryContainer,
+            foregroundColor: colorScheme.onSecondaryContainer,
+            child: const Icon(Icons.refresh),
+          ),
+        ),
+      );
+    }
+    return child;
   }
 
   late final gridDelegate = SliverGridDelegateWithExtentAndRatio(

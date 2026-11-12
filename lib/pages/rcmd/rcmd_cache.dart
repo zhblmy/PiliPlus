@@ -11,10 +11,10 @@ abstract final class RcmdCache {
   /// 2：指纹改为全量 id、新增 `pages`（旧缓存读不出来，正好丢掉）
   static const int _ver = 2;
 
-  /// 20 条 ≈ 2 屏：一次刷新就是这么多，再多也用不到
-  static const int _maxItems = 20;
+  /// 30 条 ≈ 3 屏：桌面端一次刷新就是 30 条，再多也用不到
+  static const int _maxItems = 30;
 
-  /// 每个来源一个槽位：app / web 的缓存互不覆盖，
+  /// 每个来源一个槽位：app / web / desktop 的缓存互不覆盖，
   /// 来回切换模式不用各拉一次
   static String _key(String src) => '${LocalCacheKey.rcmdCache}_$src';
 

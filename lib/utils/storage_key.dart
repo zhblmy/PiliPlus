@@ -51,6 +51,7 @@ abstract final class SettingBoxKey {
       enableBackgroundPlay = 'enableBackgroundPlay',
       continuePlayInBackground = 'continuePlayInBackground',
       appRcmd = 'appRcmd',
+      rcmdSource = 'rcmdSource',
       enableSaveLastData = 'enableSaveLastData',
       minDurationForRcmd = 'minDurationForRcmd',
       minPlayForRcmd = 'minPlayForRcmd',
@@ -151,6 +152,7 @@ abstract final class SettingBoxKey {
       enableTapDm = 'enableTapDm',
       setSystemBrightness = 'setSystemBrightness',
       downloadPath = 'downloadPath',
+      cachePlayInfo = 'cachePlayInfo',
       imageSavePath = 'imageSavePath',
       followOrderType = 'followOrderType',
       enableImgMenu = 'enableImgMenu',
@@ -166,7 +168,9 @@ abstract final class SettingBoxKey {
       buvid = 'buvid',
       blockAtOnlyReply = 'blockAtOnlyReply',
       blockReplyAtCount = 'blockReplyAtCount',
-      filterIntro = 'filterIntro';
+      filterIntro = 'filterIntro',
+      showRefreshFAB = 'showRefreshFAB',
+      autoWearMedal = 'autoWearMedal';
 
   static const String superChatType = 'superChatType',
       enableFullScreenSC = 'enableFullScreenSC',
@@ -259,7 +263,8 @@ abstract final class SettingBoxKey {
       reduceLuxColor = 'reduceLuxColor',
       liveCdnUrl = 'liveCdnUrl',
       saveReply = 'saveReply',
-      appFont = 'appFont';
+      appFont = 'appFont',
+      foldDepth = 'foldDepth';
 }
 
 abstract final class LocalCacheKey {

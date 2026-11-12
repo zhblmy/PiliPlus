@@ -77,10 +77,10 @@ class _ColorSelectPageState extends State<ColorSelectPage> {
     final subTitleStyle = theme.textTheme.labelMedium!.copyWith(
       color: theme.colorScheme.outline,
     );
-    final size = MediaQuery.sizeOf(context);
     final padding = MediaQuery.viewPaddingOf(
       context,
     ).copyWith(top: 0, bottom: 0);
+    final size = MediaQuery.sizeOf(context);
     return SimpleScaffold(
       appBar: AppBar(title: const Text('选择应用主题')),
       body: ListView(

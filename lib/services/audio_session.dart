@@ -1,21 +1,21 @@
 import 'dart:io' show Platform;
 
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
-import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
+import 'package:PiliPlus/services/service_locator.dart';
 import 'package:PiliPlus/utils/device_utils.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/widgets.dart';
 
 class AudioSessionHandler with WidgetsBindingObserver {
-  late AudioSession session;
-  bool _playInterrupted = false;
+  late AudioSession _session;
+  bool _shouldResume = false;
 
   /// 因音频打断暂停后，「现在不允许与音频 API 交互」时挂起的续播请求
   /// （见 [_resumeAfterInterruption]）。
   bool _pendingResume = false;
 
   Future<bool> setActive(bool active) {
-    return session.setActive(active);
+    return _session.setActive(active);
   }
 
   AudioSessionHandler() {
@@ -42,7 +42,8 @@ class AudioSessionHandler with WidgetsBindingObserver {
   void _resumeAfterInterruption() {
     if (_canInteractWithAudio) {
       _pendingResume = false;
-      PlPlayerController.playIfExists();
+      videoPlayerServiceHandler?.onPlay?.call() ??
+          PlPlayerController.instance?.play();
     } else {
       _pendingResume = true;
     }
@@ -54,67 +55,58 @@ class AudioSessionHandler with WidgetsBindingObserver {
     _pendingResume = false;
     // 用户可能已经在应用内手动恢复了播放，这里只在仍处于暂停时补一次续播
     if (PlPlayerController.getPlayerStatusIfExists()?.isPlaying != true) {
-      PlPlayerController.playIfExists();
+      videoPlayerServiceHandler?.onPlay?.call() ??
+          PlPlayerController.instance?.play();
     }
   }
 
   Future<void> initSession() async {
     WidgetsBinding.instance.addObserver(this);
-    session = await AudioSession.instance;
-    session.configure(const AudioSessionConfiguration.music());
+    _session = await AudioSession.instance;
+    _session.configure(const AudioSessionConfiguration.music());
 
-    session.interruptionEventStream.listen((event) {
-      final playerStatus = PlPlayerController.getPlayerStatusIfExists();
-      // final player = PlPlayerController.getInstance();
-      if (event.begin) {
-        if (playerStatus != PlayerStatus.playing) return;
-        // if (!player.playerStatus.playing) return;
-        switch (event.type) {
-          case AudioInterruptionType.duck:
-            PlPlayerController.setVolumeIfExists(
-              (PlPlayerController.getVolumeIfExists() ?? 0) * 0.5,
-              showIndicator: false,
-            );
-            // player.setVolume(player.volume.value * 0.5);
-            break;
-          case AudioInterruptionType.pause:
-            PlPlayerController.pauseIfExists(isInterrupt: true);
-            // player.pause(isInterrupt: true);
-            _playInterrupted = true;
-            break;
-          case AudioInterruptionType.unknown:
-            PlPlayerController.pauseIfExists(isInterrupt: true);
-            // player.pause(isInterrupt: true);
-            _playInterrupted = true;
-            break;
-        }
-      } else {
-        switch (event.type) {
-          case AudioInterruptionType.duck:
-            PlPlayerController.setVolumeIfExists(
-              (PlPlayerController.getVolumeIfExists() ?? 0) * 2,
-              showIndicator: false,
-            );
-            // player.setVolume(player.volume.value * 2);
-            break;
-          case AudioInterruptionType.pause:
-            if (_playInterrupted) _resumeAfterInterruption();
-            //player.play();
-            break;
-          case AudioInterruptionType.unknown:
-            break;
-        }
-        _playInterrupted = false;
-      }
-    });
+    _session.interruptionEventStream.listen(_onInterrupted);
 
     // 耳机拔出暂停
-    session.becomingNoisyEventStream.listen((_) {
-      PlPlayerController.pauseIfExists();
-      // final player = PlPlayerController.getInstance();
-      // if (player.playerStatus.playing) {
-      //   player.pause();
-      // }
+    _session.becomingNoisyEventStream.listen((_) {
+      videoPlayerServiceHandler?.onPause?.call() ??
+          PlPlayerController.pauseIfExists();
     });
+  }
+
+  void _onInterrupted(AudioInterruptionEvent event) {
+    if (event.begin) {
+      final player = PlPlayerController.instance;
+      switch (event.type) {
+        case .duck:
+          if (player != null && player.playerStatus.isPlaying) {
+            player.setVolume(player.volume.value * 0.5, showIndicator: false);
+          }
+        case .pause:
+        case .unknown:
+          final isAudioPlaying = videoPlayerServiceHandler?.isPlaying;
+          if (isAudioPlaying != null) {
+            if (isAudioPlaying()) {
+              _shouldResume = true;
+              videoPlayerServiceHandler?.onPause?.call();
+            }
+          } else if (player != null && player.playerStatus.isPlaying) {
+            _shouldResume = true;
+            player.pause(isInterrupt: true);
+          }
+      }
+    } else {
+      switch (event.type) {
+        case .duck:
+          final player = PlPlayerController.instance;
+          player?.setVolume(player.volume.value * 2, showIndicator: false);
+        case .pause:
+          if (_shouldResume) {
+            _shouldResume = false;
+            _resumeAfterInterruption();
+          }
+        case .unknown:
+      }
+    }
   }
 }
