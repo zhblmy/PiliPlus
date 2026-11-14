@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager.LayoutParams
+import java.util.concurrent.Executors
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -46,19 +47,71 @@ class MainActivity : AudioServiceActivity() {
             }
         }
 
-        // 消息未读桌面角标：Dart 侧只传未读总数，权限/渠道/失败都在原生侧兜底
+        // 消息通知：按会话展示发送者头像/名称/内容，桌面角标由这些通知的数字带出
+        // 旧版的「有未读消息」汇总通知不再使用：启动时就清掉，不必等第一次更新
+        MESSAGE_BADGE_EXECUTOR.execute {
+            runCatching { MessageBadge.ensureMigrated(this) }
+        }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             MESSAGE_BADGE_CHANNEL,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "setCount" -> result.success(
-                    MessageBadge.update(this, call.argument<Int>("count") ?: 0),
+                "setConversations" -> {
+                    val args = call.arguments as? Map<*, *>
+                    // 没传 = 本次不改动；传空列表 = 清空会话通知
+                    val conversations = if (args != null && args.containsKey("conversations")) {
+                        (args["conversations"] as? List<*>).orEmpty()
+                            .mapNotNull { (it as? Map<*, *>)?.toConversationNotice() }
+                    } else {
+                        null
+                    }
+                    val badge = args?.get("badge") as? Boolean ?: false
+                    MESSAGE_BADGE_EXECUTOR.execute {
+                        val success = runCatching {
+                            MessageBadge.update(this, conversations, badge)
+                        }.getOrDefault(false)
+                        // 引擎可能已销毁（后台被回收）：回执失败不能带崩进程
+                        runOnUiThread { runCatching { result.success(success) } }
+                    }
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
+        // 会话通知的后台轮询宿主：Dart 侧定时器需要前台服务把进程钉住
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            MESSAGE_NOTIFY_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> result.success(
+                    runCatching { MessageNotifyService.start(this) }.isSuccess,
+                )
+
+                "stop" -> result.success(
+                    runCatching { MessageNotifyService.stop(this) }.isSuccess,
                 )
 
                 else -> result.notImplemented()
             }
         }
+    }
+
+    private fun Map<*, *>.toConversationNotice(): ConversationNotice? {
+        val key = this["key"] as? String ?: return null
+        return ConversationNotice(
+            key = key,
+            name = (this["name"] as? String).orEmpty().ifEmpty { "新消息" },
+            avatarUrl = (this["avatarUrl"] as? String).orEmpty(),
+            avatar = this["avatar"] as? ByteArray,
+            content = (this["content"] as? String).orEmpty().ifEmpty { "有新消息" },
+            unread = (this["unread"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1,
+            muted = this["muted"] as? Boolean ?: false,
+            timestamp = (this["timestamp"] as? Number)?.toLong() ?: 0L,
+            alert = this["alert"] as? Boolean ?: true,
+        )
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -89,6 +142,9 @@ class MainActivity : AudioServiceActivity() {
     }
 
     companion object {
+        private val MESSAGE_BADGE_EXECUTOR = Executors.newSingleThreadExecutor()
+
         private const val MESSAGE_BADGE_CHANNEL = "piliplus/message_badge"
+        private const val MESSAGE_NOTIFY_CHANNEL = "piliplus/message_notify_foreground"
     }
 }

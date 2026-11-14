@@ -185,6 +185,7 @@ class _WhisperPageState extends State<WhisperPage>
                     _controller.onSetMute(item, isMuted, talkerUid),
                 onRemove: _controller.onRemove,
                 onRefresh: _controller.onRefresh,
+                onUnreadChanged: _controller.refreshNotices,
               );
             },
             separatorBuilder: (context, index) => divider,

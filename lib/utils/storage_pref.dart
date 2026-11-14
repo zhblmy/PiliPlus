@@ -174,6 +174,10 @@ abstract final class Pref {
   static bool get enableMsgBadge =>
       _setting.get(SettingBoxKey.msgBadgeNotify, defaultValue: true);
 
+  /// 通知栏按会话展示发送者头像/会话名/消息内容（独立于桌面角标），默认开启
+  static bool get enableMsgDetailNotify =>
+      _setting.get(SettingBoxKey.msgDetailNotify, defaultValue: true);
+
   static Set<MsgUnReadType> get msgUnReadTypeV2 =>
       (_setting.get(SettingBoxKey.msgUnReadTypeV2) as List?)
           ?.map((index) => MsgUnReadType.values[index])

@@ -33,6 +33,7 @@ class WhisperSessionItem extends StatelessWidget {
     required this.onSetMute,
     required this.onRemove,
     this.onRefresh,
+    this.onUnreadChanged,
   });
 
   final Session item;
@@ -42,6 +43,9 @@ class WhisperSessionItem extends StatelessWidget {
 
   /// 从详情/子列表返回后刷新当前会话列表，避免摘要、排序停留在旧数据
   final VoidCallback? onRefresh;
+
+  /// 本地改完未读状态后同步通知，避免通知栏等下一轮轮询才消失
+  final VoidCallback? onUnreadChanged;
 
   Future<void> _updateAck(BuildContext context) async {
     final talkerId = item.id.privateId.talkerUid.toInt();
@@ -61,6 +65,7 @@ class WhisperSessionItem extends StatelessWidget {
       if (ackRes.isSuccess) {
         SmartDialog.showToast('已标为已读');
         item.clearUnread();
+        onUnreadChanged?.call();
         if (context.mounted) {
           (context as Element).markNeedsBuild();
         }

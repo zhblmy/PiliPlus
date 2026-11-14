@@ -33,6 +33,7 @@ import 'package:PiliPlus/pages/setting/widgets/select_dialog.dart';
 import 'package:PiliPlus/pages/setting/widgets/slider_dialog.dart';
 import 'package:PiliPlus/plugin/pl_player/utils/fullscreen.dart';
 import 'package:PiliPlus/services/message_badge.dart';
+import 'package:PiliPlus/services/message_notify_foreground.dart';
 import 'package:PiliPlus/utils/extension/file_ext.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
@@ -267,16 +268,27 @@ List<SettingsModel> get styleSettings => [
     items: DynamicBadgeMode.values,
     onSelected: _setMsgBadge,
   ),
-  if (Platform.isAndroid)
+  if (Platform.isAndroid) ...[
     const SwitchModel(
       title: '桌面未读角标',
-      subtitle: '通过一条消息通知在桌面图标上显示未读数；需要通知权限',
+      subtitle: '通过会话通知在桌面图标上显示未读数；需同时开启「通知栏消息详情」',
       leading: Icon(Icons.notifications_active_outlined),
       setKey: SettingBoxKey.msgBadgeNotify,
       defaultVal: true,
       beforeChange: _requestMsgBadgePermission,
       onChanged: _onMsgBadgeNotifyChanged,
     ),
+    SwitchModel(
+      title: '通知栏消息详情',
+      subtitle: '按会话显示发送者头像、会话名和消息内容；退到后台时会保留一个常驻通知用于接收消息；需要通知权限',
+      leading: const Icon(Icons.forum_outlined),
+      setKey: SettingBoxKey.msgDetailNotify,
+      defaultVal: true,
+      beforeChange: (value) =>
+          _requestMsgBadgePermission(value, tip: '通知栏消息详情'),
+      onChanged: _onMsgDetailNotifyChanged,
+    ),
+  ],
   NormalModel(
     onTap: _showMsgUnReadDialog,
     title: '消息未读类型',
@@ -792,13 +804,13 @@ void _setDynBadge(DynamicBadgeMode value, VoidCallback setState) {
 void _setMsgBadge(DynamicBadgeMode value, VoidCallback setState) {
   final mainController = Get.find<MainController>()..msgBadgeMode = value;
   if (value != DynamicBadgeMode.hidden) {
-    // 切回可见时确保轮询在跑
-    mainController
-      ..startMsgPolling()
-      ..queryUnreadMsg(true);
+    // 轮询一直按通知间隔在跑，这里只需立刻刷新一次未读汇总。
+    // 不要调 startMsgPolling()：它会清掉「被二级页面覆盖」的状态，
+    // 让设置页（本身就是压在上面的路由）误以为回到了主页
+    mainController.queryUnreadMsg(true);
   } else {
-    // 隐藏 App 内角标不影响独立的桌面角标设置
-    if (Pref.enableMsgBadge) {
+    // 隐藏 App 内角标不影响独立的桌面角标/会话通知设置
+    if (Pref.enableMsgBadge || Pref.enableMsgDetailNotify) {
       mainController.queryUnreadMsg();
     } else {
       mainController.clearUnreadMsg();
@@ -809,28 +821,39 @@ void _setMsgBadge(DynamicBadgeMode value, VoidCallback setState) {
       .whenComplete(setState);
 }
 
-Future<bool> _requestMsgBadgePermission(bool value) async {
+Future<bool> _requestMsgBadgePermission(
+  bool value, {
+  String tip = '桌面角标',
+}) async {
   if (!value) return true;
   if (await Permission.notification.isGranted) return true;
   final status = await Permission.notification.request();
   if (status.isGranted) return true;
   SmartDialog.showToast(
     status.isPermanentlyDenied
-        ? '通知权限已被永久拒绝，请到系统设置中开启后再启用桌面角标'
-        : '未授予通知权限，桌面角标不会显示',
+        ? '通知权限已被永久拒绝，请到系统设置中开启后再启用$tip'
+        : '未授予通知权限，$tip不会显示',
   );
   return false;
 }
 
-void _onMsgBadgeNotifyChanged(bool value) {
+void _onMsgDetailNotifyChanged(bool value) {
   if (!value) {
-    MessageBadge.update(0);
+    MessageNotifyForeground.stop();
+    MessageBadge.updateConversations(const []);
     return;
   }
+  // 常驻服务只在退到后台时启动，这里只需按当前会话重建通知
   if (Get.isRegistered<MainController>()) {
-    // 权限已在开关落盘前确认，立即按当前未读数更新通知
-    MessageBadge.reset();
-    Get.find<MainController>().queryUnreadMsg();
+    // 会话通知关掉时已被清空，重新打开要立刻发回来，而不是等下一轮轮询
+    Get.find<MainController>().refreshMsgNotices();
+  }
+}
+
+void _onMsgBadgeNotifyChanged(bool value) {
+  // 角标数字挂在会话通知上：开关变化后按当前会话重发一遍（内容没变的不会响）
+  if (Get.isRegistered<MainController>()) {
+    Get.find<MainController>().refreshMsgNotices();
   }
 }
 

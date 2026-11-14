@@ -9,6 +9,7 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/msg.dart';
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
+import 'package:PiliPlus/pages/whisper/controller.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/accounts/account_manager/account_mgr.dart';
 import 'package:PiliPlus/utils/extension/rsp_session_msg_ext.dart';
@@ -199,6 +200,10 @@ class WhisperDetailController extends CommonListController<RspSessionMsg, Msg> {
       // 服务端已确认已读，未读角标以服务端汇总为准
       if (Get.isRegistered<MainController>()) {
         Get.find<MainController>().queryUnreadMsg();
+      }
+      // 当前会话已读：立刻撤掉它自己的那条通知，不必等下一轮列表刷新
+      if (Get.isRegistered<WhisperController>()) {
+        Get.find<WhisperController>().markSessionRead(talkerId);
       }
     } else if (kDebugMode) {
       // 自动 ack 由增量同步触发，失败时不打断用户，角标会保持未读

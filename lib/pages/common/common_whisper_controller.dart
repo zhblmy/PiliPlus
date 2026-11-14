@@ -15,6 +15,9 @@ abstract class CommonWhisperController<R>
     extends CommonListController<R, Session> {
   SessionPageType get sessionPageType;
 
+  /// 会话未读/免打扰状态变化后同步通知；主会话列表会覆写
+  void refreshNotices() {}
+
   Future<void> onRemove(int talkerId) async {
     final res = await MsgHttp.removeMsg(talkerId);
     if (res.isSuccess) {
@@ -33,6 +36,7 @@ abstract class CommonWhisperController<R>
         await onRefresh();
       }
       MsgSessionMute.forget(talkerId);
+      refreshNotices();
       SmartDialog.showToast('删除成功');
     } else {
       res.toast();
@@ -105,6 +109,7 @@ abstract class CommonWhisperController<R>
       }
     }
     loadingState.refresh();
+    refreshNotices();
     SmartDialog.showToast('设置成功');
   }
 
@@ -122,6 +127,7 @@ abstract class CommonWhisperController<R>
         }
       }
       SmartDialog.showToast('已标记为已读');
+      refreshNotices();
       if (Get.isRegistered<MainController>()) {
         await Get.find<MainController>().queryUnreadMsg();
       }
@@ -134,6 +140,8 @@ abstract class CommonWhisperController<R>
     final res = await ImGrpc.deleteSessionList(pageType: sessionPageType);
     if (res.isSuccess) {
       loadingState.value = const Success(null);
+      // 列表已整体删除，通知栏里的会话通知也要立刻消失
+      refreshNotices();
     } else {
       res.toast();
     }

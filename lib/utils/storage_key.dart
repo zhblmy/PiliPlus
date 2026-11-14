@@ -255,6 +255,7 @@ abstract final class SettingBoxKey {
       dynamicBadgeMode = 'dynamicBadgeMode',
       msgBadgeMode = 'msgBadgeMode',
       msgBadgeNotify = 'msgBadgeNotify',
+      msgDetailNotify = 'msgDetailNotify',
       msgDndOverride = 'msgDndOverride',
       msgUnReadTypeV2 = 'msgUnReadTypeV2',
       navBarSort = 'navBarSort',
