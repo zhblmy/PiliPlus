@@ -109,7 +109,8 @@ class _MainAppState extends PopScopeState<MainApp>
 
   @override
   void didPushNext() {
-    _mainController.onRouteCovered();
+    // 被二级页面覆盖：停表并置 _routeCovered，回到主页时由 didPopNext 重新起表
+    _mainController.stopMsgPolling();
     removeObserverMobile(this);
     super.didPushNext();
   }

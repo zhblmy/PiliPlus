@@ -1,8 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart'
-    show Session, UnreadStyle;
+import 'package:PiliPlus/grpc/bilibili/app/im/v1.pb.dart' show Session, UnreadStyle;
 import 'package:PiliPlus/http/init.dart' show Request;
 import 'package:PiliPlus/services/message_badge.dart';
 import 'package:PiliPlus/utils/image_utils.dart';
@@ -131,10 +130,6 @@ Set<String> changedNoticeKeys(
       item.key,
 };
 
-/// 只取已经下载好的头像：首发时用它，避免让消息内容等图片
-Uint8List? cachedNoticeAvatar(String url) =>
-    url.isEmpty ? null : _avatarCache[url]?.bytes;
-
 /// 头像缩略图：让服务端缩到 96×96 webp，原生只负责解码
 Future<Uint8List?> loadNoticeAvatar(String url) async {
   if (url.isEmpty) return null;
@@ -191,15 +186,10 @@ void clearMsgNotices() {
 
 /// 会话通知只在 Android 且「通知栏消息详情」打开时才有意义。
 /// 调用方用它跳过整个流程，避免在桌面/iOS 上白发一次会话列表请求、白下载头像。
-bool get enableMsgNotice => Platform.isAndroid && Pref.enableMsgDetailNotify;
+bool get enableMsgNotice =>
+    Platform.isAndroid && Pref.enableMsgDetailNotify;
 
 /// 唯一发布入口：先应用本地免打扰覆盖，再映射，最后交给原生
-///
-/// 分两段发布，让「会话名 + 消息内容」不必等头像下载：
-/// 1. 用已有缓存头像立刻发一遍（新会话第一次出现时头像还没下载，是空的）；
-/// 2. 缺头像的那几条下载完再静默更新一次，不重复提醒。
-///
-/// 中间没有 await，所以列表一到就能上通知栏；头像下载失败也不会拖住内容。
 Future<void> publishMsgNotices(List<Session> sessions) async {
   // 非 Android 不做映射与头像下载：原生侧本来也是空实现
   if (!Platform.isAndroid) return;
@@ -213,8 +203,15 @@ Future<void> publishMsgNotices(List<Session> sessions) async {
     return;
   }
 
+  // 头像到位后一次性发布：分两次发（先文字后头像）会让内容指纹在两次之间来回跳，
+  // 每轮轮询都重新 notify 一遍，通知会被反复提醒。
+  final avatars = await Future.wait([
+    for (final item in items) loadNoticeAvatar(item.avatarUrl),
+  ]);
+  if (version != _publishVersion) return;
+
+  // 只在最新一批真正准备发布时推进历史指纹，避免过期头像请求吞掉新消息提醒。
   // 冷启动第一次同步展示的是历史未读，全部静默；之后只有真正的新消息才提醒。
-  // 版本号在开头就递增，过期批次会在 _postNotices 里被丢弃，不会覆盖这份指纹。
   final alertKeys = _hasPublished
       ? changedNoticeKeys(items, _lastItemSignatures)
       : const <String>{};
@@ -227,35 +224,8 @@ Future<void> publishMsgNotices(List<Session> sessions) async {
       ),
     );
 
-  // 关掉「通知栏消息详情」时不发也不下载头像，但上面的指纹照常推进：
-  // 重新打开时这些历史消息不会被当成新消息响一遍
-  if (!Pref.enableMsgDetailNotify) return;
-
-  final avatars = [
-    for (final item in items) cachedNoticeAvatar(item.avatarUrl),
-  ];
-  _postNotices(version, items, avatars, alertKeys);
-  if (!avatars.contains(null)) return;
-
-  final loaded = await Future.wait([
-    for (final item in items) loadNoticeAvatar(item.avatarUrl),
-  ]);
-  if (version != _publishVersion) return;
-  _postNotices(version, items, loaded, const <String>{});
-}
-
-void _postNotices(
-  int version,
-  List<MsgNoticeItem> items,
-  List<Uint8List?> avatars,
-  Set<String> alertKeys,
-) {
-  if (version != _publishVersion) return;
   MessageBadge.updateConversations([
     for (var i = 0; i < items.length; i++)
-      items[i].toChannelMap(
-        avatars[i],
-        alert: alertKeys.contains(items[i].key),
-      ),
+      items[i].toChannelMap(avatars[i], alert: alertKeys.contains(items[i].key)),
   ]);
 }

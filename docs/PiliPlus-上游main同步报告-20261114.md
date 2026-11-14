@@ -33,7 +33,7 @@
 
 - 把 `Theme.of(context)`、`MediaQuery.viewPaddingOf`、`MediaQuery.sizeOf(context).isPortrait` 等取值从 `build()` 移到 `didChangeDependencies()` 缓存，改为字段复用（登录页、音频页、图集、发布页、动态相关页、直播间控制条、搜索相关页、设置页、视频页、评论项等 20+ 处）。
 - 新增 Flutter SDK 补丁 **`lib/scripts/media_query.patch`**，给 `MediaQueryData` / `MediaQuery` 增加 `isPortrait`、`isTablet`、`shortestSide` 及对应的 `MediaQuery.isPortraitOf(context)` / `isTabletOf` / `shortestSideOf` 静态方法，并注册到 `InheritedModel` 的 `_MediaQueryAspect`。
-  - 意义：读取这些属性时只依赖**单个 aspect**，尺寸以外的字段（如键盘内边距、亮度）变化不再触发页面重建。
+  - 意义：读取这些属性时只依赖**单个 aspect**（`isPortrait` / `isTablet` / `shortestSide`），而不是整个 `size`；因此尺寸变化但横竖屏/平板判定不变时（分屏拖动、桌面窗口缩放）不再触发重建。
 - 删除 `lib/utils/extension/context_ext.dart`（`context.isTablet` 等扩展），调用点统一改为上面的 `MediaQuery.*Of`。
 - `lib/utils/extension/size_ext.dart` 保留（`SizeExt.isPortrait` 供 `Size` 使用）。
 

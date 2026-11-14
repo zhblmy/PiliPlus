@@ -75,7 +75,8 @@ void main() {
 
     test('最多只发布 5 条', () {
       final items = buildMsgNotices([
-        for (var i = 1; i <= 6; i++) _session(privateUid: i, number: Int64(1)),
+        for (var i = 1; i <= 6; i++)
+          _session(privateUid: i, number: Int64(1)),
       ]);
       expect(items, hasLength(5));
       expect(items.map((e) => e.key), ['p:1', 'p:2', 'p:3', 'p:4', 'p:5']);
@@ -177,10 +178,7 @@ void main() {
       );
       expect(
         MessageBadge.signatureForTesting([
-          {
-            ...item,
-            'avatar': Uint8List.fromList([1]),
-          },
+          {...item, 'avatar': Uint8List.fromList([1])},
         ]),
         isNot(initial),
       );

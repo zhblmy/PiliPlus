@@ -77,18 +77,8 @@ class MainController extends GetxController
 
   static const _period = 5 * 60 * 1000;
 
-  /// 前台未读汇总（HTTP，给角标用）的检查间隔
+  /// 前台未读检查间隔：角标与「消息」页会话列表共用
   static const _msgPollInterval = Duration(seconds: 60);
-
-  /// 前台通知栏内容的刷新间隔。
-  ///
-  /// 用户直接看到的是通知栏里的会话名和消息内容，比角标数字更需要及时，
-  /// 所以单独用更短的间隔（只多一个 gRPC 请求，HTTP 汇总仍按 60 秒走）。
-  static const _noticePollInterval = Duration(seconds: 5);
-
-  /// 底栏主页被二级页面（视频页、设置页等）覆盖时的通知刷新间隔：
-  /// 角标不刷，但通知栏内容仍要在用户看别的内容时更新，只是降频到 60 秒
-  static const _coveredNoticeInterval = Duration(seconds: 15);
 
   /// 后台轮询间隔（前台服务保活时）：低频，兼顾及时性与耗电
   static const _bgPollInterval = Duration(minutes: 2);
@@ -99,19 +89,10 @@ class MainController extends GetxController
   late int _lastSelectTime = 0;
   int _lastBgPollAt = 0;
   int _lastNoticeRefreshAt = 0;
-
-  /// 上一次发未读汇总（HTTP）的时间：失败也更新，避免断网时跟着 5 秒通知轮询重试
-  int _lastUnreadPollAt = 0;
-
-  /// 会话通知请求是否在飞：定时器与未读汇总可能并发触发，避免重复请求
-  bool _isRefreshingNotice = false;
-
-  /// 请求在飞期间收到的强制刷新，等这次回来再补
-  bool _noticeRefreshPending = false;
   bool _isBackground = false;
 
-  /// 底栏主页是否被二级页面覆盖（`MainApp.didPushNext` 会调 [onRouteCovered]）：
-  /// 覆盖期间不刷角标，只按 [_coveredNoticeInterval] 低频率刷新通知栏内容
+  /// 底栏主页是否被二级页面覆盖（`MainApp.didPushNext` 会调 [stopMsgPolling]）：
+  /// 前台被覆盖时不轮询，但退到后台仍要靠定时器
   bool _routeCovered = false;
 
   AppLifecycleListener? _appLifecycle;
@@ -295,7 +276,7 @@ class MainController extends GetxController
         unawaited(_refreshMsgNotice(force: true));
       } else if (!isMsgPageVisible) {
         // 桌面角标和会话通知都由会话列表发布：查完未读后顺带对齐一次，
-        // 冷启动时不必等满一轮轮询才出现角标。与 _pollMsg 共用 5 秒节流，
+        // 冷启动时不必等满一轮轮询才出现角标。与 _pollMsg 共用 60 秒节流，
         // 不会多打请求；消息页可见时由该页的响应直接发布，这里跳过。
         unawaited(_refreshMsgNotice());
       }
@@ -489,17 +470,14 @@ class MainController extends GetxController
 
   /// 前台时的周期检查；退到后台后由 [onEnterBackground] 接管并降频
   void startMsgPolling() {
-    final wasCovered = _routeCovered;
     _routeCovered = false;
     _ensureMsgPollTimer();
-    // 从二级页面/后台回到主页：覆盖期是 60 秒档，这里立刻对齐一次，
-    // 免得刚返回时通知栏还停在旧内容（仍受 5 秒节流约束，不会多打请求）
-    if (wasCovered) unawaited(_refreshMsgNotice());
   }
 
   /// 退到后台：前台服务只在后台需要，此时才拉起常驻通知并继续轮询
   ///
-  /// 这里**不**停轮询定时器：[_pollMsg] 自己会按前后台状态与 `isRunning` 早退。
+  /// 这里**不**停轮询定时器：[_pollMsg] 自己会按前后台状态与 `isRunning` 早退，
+  /// 停表反而会让「从二级页面退后台再回前台」之后定时器再也起不来。
   Future<void> onEnterBackground() async {
     if (_isBackground) return;
     _isBackground = true;
@@ -508,7 +486,7 @@ class MainController extends GetxController
     }
     // 进后台先立刻查一次，不必等满一个后台间隔
     _lastBgPollAt = 0;
-    // 定时器一般已在跑；从没有底栏/覆盖状态进来时补一个（已存在则什么也不做）
+    // 从二级页面退到后台时 MainApp 已经停过表，这里补上
     _ensureMsgPollTimer();
     if (!await MessageNotifyForeground.start()) {
       // 前台服务起不来（权限被拒 / Android 12+ 后台启动限制）就不必空转
@@ -524,15 +502,13 @@ class MainController extends GetxController
 
   /// 回前台：摘掉常驻的「正在接收消息通知」，恢复常规轮询
   void onEnterForeground() {
-    final wasBackground = _isBackground;
     _isBackground = false;
-    // 真正从后台回来（不是拉一下通知栏那种 inactive）：立刻对齐一次通知栏内容。
-    // 这里直接发，不依赖 resumed 回调的先后顺序（它的查询会被这里的节流挡掉）
-    if (wasBackground) {
-      _lastNoticeRefreshAt = 0;
-      unawaited(_refreshMsgNotice());
+    // 后台轮询的定时器是给退后台准备的；回前台时若底栏主页还被二级页面覆盖，
+    // 就按「前台不轮询」把表停掉，等 didPopNext 再恢复
+    if (_routeCovered && _msgPollTimer != null) {
+      _msgPollTimer!.cancel();
+      _msgPollTimer = null;
     }
-    // 不再按覆盖状态停表：覆盖期间也要刷新通知栏内容（见 [_pollMsg] 的覆盖分支）
     if (MessageNotifyForeground.isRunning) {
       unawaited(MessageNotifyForeground.stop());
     }
@@ -546,22 +522,11 @@ class MainController extends GetxController
 
   void _ensureMsgPollTimer() {
     if (_msgPollTimer != null || !(hasHome || hasMsg)) return;
-    // 定时器按更短的通知间隔跑；HTTP 汇总在自己的节流里退化成 60 秒一次。
-    // 两个开关都不需要时在 _pollMsg 里几行判断就返回，5 秒一次的唤醒可以忽略。
-    _msgPollTimer = Timer.periodic(_noticePollInterval, (_) => _pollMsg());
+    _msgPollTimer = Timer.periodic(_msgPollInterval, (_) => _pollMsg());
   }
 
-  /// 底栏主页被二级页面覆盖（`MainApp.didPushNext`）。
-  ///
-  /// 角标不再刷新，但定时器留着：通知栏内容要在用户看视频、逛设置时继续更新，
-  /// 否则那时收到的消息要等回到主页才出现。
-  void onRouteCovered() {
-    _routeCovered = true;
-    _ensureMsgPollTimer();
-  }
-
-  /// 真正停表：只给 [onDetach] / [onClose] 用
   void stopMsgPolling() {
+    // 只有 didPushNext（被二级页面覆盖）和 onDetach 会走到这里
     _routeCovered = true;
     _msgPollTimer?.cancel();
     _msgPollTimer = null;
@@ -577,18 +542,16 @@ class MainController extends GetxController
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached;
-    final now = DateTime.now().millisecondsSinceEpoch;
     if (background) {
       // 后台只有「通知栏消息详情」开启且前台服务存活时才继续，并降频
       if (!Pref.enableMsgDetailNotify || !MessageNotifyForeground.isRunning) {
         return;
       }
+      final now = DateTime.now().millisecondsSinceEpoch;
       if (now - _lastBgPollAt < _bgPollInterval.inMilliseconds) return;
       _lastBgPollAt = now;
     } else if (_routeCovered) {
-      // 前台但底栏主页被二级页面覆盖（视频页、设置页等）：角标不刷，
-      // 但通知栏内容仍要更新，只是降频（见 _refreshMsgNotice 的间隔选择）
-      await _refreshMsgNotice();
+      // 前台但底栏主页被二级页面覆盖：回到主页时 didPopNext 会重新起表
       return;
     }
 
@@ -596,68 +559,30 @@ class MainController extends GetxController
         msgBadgeMode != DynamicBadgeMode.hidden ||
         Pref.enableMsgBadge ||
         Pref.enableMsgDetailNotify;
-    // 未读汇总（HTTP）与通知内容（gRPC）互不依赖，并发发出：
-    // 通知栏不必等角标那两个请求回来
-    Future<void>? unread;
-    if (badgeVisible &&
-        (background ||
-            now - _lastUnreadPollAt >= _msgPollInterval.inMilliseconds)) {
-      // 先记时间再请求：失败时也按 60 秒退避，不要跟着 5 秒通知轮询重试
-      _lastUnreadPollAt = now;
-      unread = queryUnreadMsg();
+    if (badgeVisible) {
+      await queryUnreadMsg();
     }
     // 消息页可见时由 WhisperController 顺带更新会话摘要；翻过页时它会跳过，需要兜底
     bool? refreshed;
-    final msgPageRefreshInFlight =
-        !background &&
-        isMsgPageVisible &&
-        (_isRefreshingMsgPage ||
-            (Get.isRegistered<WhisperController>() &&
-                Get.find<WhisperController>().isLoading));
-    if (!background && isMsgPageVisible && !msgPageRefreshInFlight) {
+    if (!background && isMsgPageVisible) {
       refreshed = await refreshMsgPage(quiet: true);
     }
-    if (refreshed == null && !msgPageRefreshInFlight) {
-      await _refreshMsgNotice();
-    }
-    if (unread != null) await unread;
+    if (refreshed == null) await _refreshMsgNotice();
   }
 
   /// 消息页不可见（含 quietRefresh 因翻过页跳过）时的会话通知刷新
   Future<void> _refreshMsgNotice({bool force = false}) async {
     if (!enableMsgNotice) return;
-    // 未读汇总与定时器会并发触发：同一时刻只留一个请求，
-    // 在飞的那次返回后会照常发布，不必再发一遍
-    if (_isRefreshingNotice) {
-      // 设置里切换开关这类强制刷新不能丢，等这次回来再补一次
-      if (force) _noticeRefreshPending = true;
-      return;
-    }
     final now = DateTime.now().millisecondsSinceEpoch;
-    // 被二级页面覆盖时降频；后台的 2 分钟节流在 _pollMsg 里已经做过了
-    final interval = _routeCovered
-        ? _coveredNoticeInterval
-        : _noticePollInterval;
-    if (!force && now - _lastNoticeRefreshAt < interval.inMilliseconds) {
+    if (!force && now - _lastNoticeRefreshAt < _msgPollInterval.inMilliseconds) {
       return;
     }
     _lastNoticeRefreshAt = now;
-    _isRefreshingNotice = true;
-    try {
-      final res = await AccountManager.silent(ImGrpc.sessionMain);
-      if (res case Success(:final response)) {
-        // 头像下载可能要好几秒，不要让它占着「刷新在飞」的标记挡住下一轮；
-        // 发布入口内部有版本号，乱序回来的旧批次会被丢弃
-        unawaited(publishMsgNotices(response.sessions));
-      }
-      // 失败保留上次已发布的会话通知，不要当成「已无未读」清除
-    } finally {
-      _isRefreshingNotice = false;
-      if (_noticeRefreshPending) {
-        _noticeRefreshPending = false;
-        unawaited(_refreshMsgNotice(force: true));
-      }
+    final res = await AccountManager.silent(ImGrpc.sessionMain);
+    if (res case Success(:final response)) {
+      await publishMsgNotices(response.sessions);
     }
+    // 失败保留上次已发布的会话通知，不要当成「已无未读」清除
   }
 
   /// 立即重建会话通知（设置里重新打开「通知栏消息详情」时不必等下一轮轮询）
