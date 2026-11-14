@@ -102,14 +102,16 @@
 | --- | --- |
 | `lib/pages/home/view.dart` | 删除已不再使用的 `import 'package:PiliPlus/utils/extension/size_ext.dart';` |
 | `lib/pages/home/view.dart` | `didChangeDependencies()` 与 `build()` 中的 `MediaQuery.sizeOf(context).isPortrait` → `MediaQuery.isPortraitOf(context)`（保留本地「在 `didChangeDependencies` 里缓存 `_isPortrait`」的写法） |
+| `lib/pages/dynamics/view.dart` | 主干未覆盖到本地定制的动态页，手工补同步：2 处 `MediaQuery.sizeOf(context).isPortrait` → `MediaQuery.isPortraitOf(context)`，并删除只服务于这两处的 `size_ext.dart` import |
 
 ---
 
 ## 六、验证情况
 
-- `flutter analyze`：**0 error / 0 warning**，39 条 info（均为 vendored widget 的弃用提示与既有风格提示，与主干基线同源）。
-- 合并审计（两套方法）：
-  - 集合法：`git diff origin/main HEAD --name-only` 共 203 个文件，**与本地相对同步点改动的文件集合完全一致**（`B\A` 为空）→ 没有文件被静默改回，也没有主干改动被整体吞掉。
+- `flutter analyze`：**0 error / 0 warning**，39 条 info（均为 vendored widget 的弃用提示与既有风格提示，与主干基线同源）；修正 `dynamics/view.dart` 后重跑结果不变。
+- `flutter build apk --release --target-platform android-arm64 --split-per-abi`：**通过**（产物 `app-arm64-v8a-release.apk`，24.2 MB），构建时间晚于本次代码改动，改动已被 release 全量编译验证。
+- 合并审计（两套方法，均以合并提交 `d2481248f` 为对象）：
+  - 集合法：`git diff origin/main d2481248f --name-only` 共 203 个文件，**与本地相对同步点改动的文件集合完全一致**（`B\A` 为空）→ 没有文件被静默改回，也没有主干改动被整体吞掉。
   - 行级法：13 个双方共同修改的文件中，主干新增行全部保留；唯一未命中的一行是 `if (!_mainController.useSideBar && MediaQuery.isPortraitOf(context))`，属本地新布局取代 `customAppBar()` 的预期差异。
 - 未做真机冒烟。建议重点回归：
   1. 首页顶栏折叠/展开、下拉刷新与顶栏让位动画（冲突文件）；
@@ -131,3 +133,5 @@
    `%LOCALAPPDATA%\Pub\Cache\material_ui_old_versions_bak\`。
 3. `media_kit_video` 补丁**不幂等**：重复运行会报 `patch does not apply`，用
    `git -C <media-kit-*dir> apply --reverse --check <patch>` 确认退出码为 0 即已在位，可忽略该报错。
+4. **本机无法运行 `flutter test`**：`cnativeapi` 的 native assets 构建需要 MSVC `cl.exe`，当前机器未装 Visual Studio C++ 工具链，会以
+   `No compiler configured on host 'windows_x64'` 失败（与业务代码无关）。需要跑单测时先装 VS Build Tools 的「使用 C++ 的桌面开发」组件；本次因此只做了 `flutter analyze` + release APK 构建验证。

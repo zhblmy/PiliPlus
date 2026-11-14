@@ -13,7 +13,6 @@ import 'package:PiliPlus/pages/dynamics_create/view.dart';
 import 'package:PiliPlus/pages/dynamics_tab/view.dart';
 import 'package:PiliPlus/pages/main/controller.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
-import 'package:PiliPlus/utils/extension/size_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart' hide DraggableScrollableSheet;
@@ -58,7 +57,7 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _isPortrait = MediaQuery.sizeOf(context).isPortrait;
+    _isPortrait = MediaQuery.isPortraitOf(context);
   }
 
   @override
@@ -298,11 +297,13 @@ class _DynamicsPageState extends CommonPageState<DynamicsPage>
     // 内容只在它下方绘制；其它模式（侧边栏/横屏）保持原样（顶栏参与排版）。
     // 判定用 MainLayout 布局模式的那个唯一来源（useBottomNav，等价于首页的
     // showAppBar = !useSideBar && isPortrait），避免在页面里再算一遍。
-    // 这里仍然要读一次 MediaQuery.sizeOf：useBottomNav 是 MainLayout 里的普通
-    // bool，本页不会因为它变化而重建；读 size 才能让旋转屏幕时本页重跑 build，
+    // 这里仍然要读一次 MediaQuery.isPortraitOf：useBottomNav 是 MainLayout 里的普通
+    // bool，本页不会因为它变化而重建；读 isPortrait 才能让旋转屏幕时本页重跑 build，
     // 否则横屏后悬浮顶栏布局会残留下来（还会把状态栏那片算两次）。
+    // 用 isPortraitOf 而非 sizeOf().isPortrait：只订阅 isPortrait 这一个 aspect，
+    // 键盘内边距、亮度等变化不会再把本页重建一遍。
     final bool floatingBar =
-        _mainController.useBottomNav && MediaQuery.sizeOf(context).isPortrait;
+        _mainController.useBottomNav && MediaQuery.isPortraitOf(context);
     final double statusBarHeight = MediaQuery.viewPaddingOf(context).top;
     // 「顶部」位置的 UP 面板会像首页的搜索栏那样放进顶栏里
     final bool topPanelInBar = floatingBar && upPanelPosition == .top;
